@@ -149,8 +149,9 @@
             @page { size: A3 landscape; margin: 0; }
             html, body { width: 100% !important; height: auto !important; overflow: visible !important; background: none; padding: 0; margin: 0; }
             
-            /* UI周りの親コンテナの制約をリセットしフル幅に */
-            #main-app, #main-app > div, #center-workspace-area {
+            /* UI周りの親コンテナの制約をリセットしフル幅に（ただしno-print要素は対象外にして、
+               ツールバーなどが優先度の関係で印刷時に復活してしまわないようにする） */
+            #main-app, #main-app > div:not(.no-print), #center-workspace-area {
                 display: block !important;
                 width: 100% !important;
                 max-width: none !important;
