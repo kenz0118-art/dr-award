@@ -494,6 +494,7 @@
                 <button id="btn-collab-toggle" onclick="toggleCollabMode()" class="bg-white hover:bg-neutral-50 font-bold text-neutral-600 py-2 px-4 rounded-xl flex items-center gap-1.5 border border-neutral-200 transition shadow-sm" title="複数人で同じプロジェクトをクラウド共有して編集します">
                     <i class="fa-solid fa-users text-sky-500"></i> <span id="collab-btn-label">共同編集</span>
                 </button>
+                <span id="collab-roster" class="flex items-center ml-2"></span>
 
                 <button onclick="openAutoPlaceSettings()" class="bg-white hover:bg-neutral-50 font-bold text-neutral-600 py-2 px-4 rounded-xl flex items-center gap-1.5 border border-neutral-200 transition shadow-sm" title="図面を貼った時に自動で写真をランダム配置するカテゴリを設定します">
                     <i class="fa-solid fa-shuffle text-emerald-500"></i> 自動配置設定
@@ -3912,6 +3913,138 @@
         let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
         let collabPollTimer = null;   // クラウドの変更を定期的に確認するタイマー
         let lastCloudSavedAt = null;  // 直近でクラウドに反映した時刻（自分の変更との区別用）
+
+        // ===== ここから：相手のカーソルをリアルタイム表示するための仕組み =====
+        const myCollabClientId = 'client-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8); // 自分と相手を区別するための、この端末だけのID
+        let myCollabName = null;   // 自分の表示名（相手のカーソルの隣に出る名前）
+        let myCollabColor = null;  // 自分のカーソルの色
+        let collabCursorChannel = null; // Supabase Realtimeのチャンネル（プレゼンス配信用）
+        const remoteCursors = {};  // { clientId: { el, name, color, floor } } 相手ごとのカーソル要素を保持
+        const COLLAB_CURSOR_COLORS = ['#e07a5f', '#3d8bfd', '#43aa8b', '#f2b134', '#9b5de5', '#00b4d8'];
+        let lastCursorBroadcastAt = 0;
+        const CURSOR_BROADCAST_INTERVAL_MS = 120; // カーソル位置を送る頻度（送りすぎ防止のための間引き）
+
+        function pickCollabColor() {
+            return COLLAB_CURSOR_COLORS[Math.floor(Math.random() * COLLAB_CURSOR_COLORS.length)];
+        }
+
+        // 相手のカーソルをDOM上に表示・更新する（ページ内の座標系は他のフレームと同じ「デザイン上のpx」を使う）
+        function renderRemoteCursor(payload) {
+            const { clientId, name, color, floor, x, y } = payload;
+            if (clientId === myCollabClientId) return; // 自分自身のカーソルは表示しない
+            // 自分が今見ている階と違う階を相手が触っている場合は、表示のしようがないので消しておく
+            if (floor !== state.currentFloor.toLowerCase()) {
+                removeRemoteCursor(clientId);
+                return;
+            }
+            const container = document.getElementById(`frames-${floor}`);
+            if (!container) return;
+
+            let entry = remoteCursors[clientId];
+            if (!entry || entry.floor !== floor) {
+                if (entry) entry.el.remove();
+                const el = document.createElement('div');
+                el.className = 'no-print';
+                el.style.cssText = 'position:absolute; z-index:9999; pointer-events:none; transition: left 0.08s linear, top 0.08s linear;';
+                el.innerHTML = `
+                    <svg width="18" height="24" viewBox="0 0 18 24" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));">
+                        <path d="M1 1 L1 18 L6 14 L9 21 L12 19.5 L9 13 L16 13 Z" fill="${color}" stroke="white" stroke-width="1"/>
+                    </svg>
+                    <span style="position:absolute; top:20px; left:14px; background:${color}; color:white; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:4px; white-space:nowrap; font-family:'Noto Sans JP',sans-serif;">${name}</span>
+                `;
+                container.appendChild(el);
+                entry = { el, name, color, floor };
+                remoteCursors[clientId] = entry;
+            }
+            entry.el.style.left = `${x}px`;
+            entry.el.style.top = `${y}px`;
+        }
+
+        function removeRemoteCursor(clientId) {
+            const entry = remoteCursors[clientId];
+            if (entry) { entry.el.remove(); delete remoteCursors[clientId]; }
+        }
+
+        function clearAllRemoteCursors() {
+            Object.keys(remoteCursors).forEach(removeRemoteCursor);
+        }
+
+        // 自分のマウス位置を、現在の階の「デザイン上のpx座標（ズーム倍率に関係ない共通の座標）」に変換して配信する
+        function broadcastMyCursor(clientX, clientY) {
+            if (!collabCursorChannel) return;
+            const now = Date.now();
+            if (now - lastCursorBroadcastAt < CURSOR_BROADCAST_INTERVAL_MS) return;
+            lastCursorBroadcastAt = now;
+
+            const suffix = state.currentFloor.toLowerCase();
+            const framesContainer = document.getElementById(`frames-${suffix}`);
+            if (!framesContainer) return;
+            const rect = framesContainer.getBoundingClientRect();
+            if (rect.width === 0) return;
+            const scale = rect.width / 1414;
+            const x = (clientX - rect.left) / scale;
+            const y = (clientY - rect.top) / scale;
+            if (x < 0 || y < 0 || x > 1414 || y > 1000) return; // ページの外にマウスがある間は配信しない
+
+            collabCursorChannel.send({
+                type: 'broadcast',
+                event: 'cursor',
+                payload: { clientId: myCollabClientId, name: myCollabName, color: myCollabColor, floor: suffix, x, y }
+            });
+        }
+
+        function joinCollabCursorChannel(projectId) {
+            if (!supabaseClient) return;
+            if (!myCollabName) myCollabName = (prompt('共同編集での、あなたの表示名を入力してください（相手のカーソルの隣にこの名前が表示されます）', '担当者') || '担当者').slice(0, 12);
+            if (!myCollabColor) myCollabColor = pickCollabColor();
+
+            if (collabCursorChannel) { supabaseClient.removeChannel(collabCursorChannel); collabCursorChannel = null; }
+            clearAllRemoteCursors();
+
+            collabCursorChannel = supabaseClient.channel(`cursor-${projectId}`, { config: { presence: { key: myCollabClientId } } });
+            collabCursorChannel
+                .on('broadcast', { event: 'cursor' }, ({ payload }) => renderRemoteCursor(payload))
+                .on('presence', { event: 'sync' }, () => {
+                    // 退出した人がいれば、そのカーソルを消す（現在参加中のclientId一覧と突き合わせる）
+                    const state2 = collabCursorChannel.presenceState();
+                    const activeIds = Object.keys(state2);
+                    Object.keys(remoteCursors).forEach(id => { if (!activeIds.includes(id)) removeRemoteCursor(id); });
+                    updateCollabRosterUI(state2);
+                })
+                .subscribe(async (status) => {
+                    if (status === 'SUBSCRIBED') {
+                        await collabCursorChannel.track({ name: myCollabName, color: myCollabColor });
+                    }
+                });
+        }
+
+        function leaveCollabCursorChannel() {
+            if (collabCursorChannel && supabaseClient) {
+                supabaseClient.removeChannel(collabCursorChannel);
+            }
+            collabCursorChannel = null;
+            clearAllRemoteCursors();
+            updateCollabRosterUI(null);
+        }
+
+        // 「今、共同編集に誰が参加しているか」を、共同編集ボタンの隣に小さな色付きの丸で表示する
+        function updateCollabRosterUI(presenceState) {
+            const roster = document.getElementById('collab-roster');
+            if (!roster) return;
+            if (!presenceState) { roster.innerHTML = ''; return; }
+            const people = Object.values(presenceState).map(arr => arr[0]).filter(Boolean);
+            roster.innerHTML = people.map(p =>
+                `<span title="${p.name}" style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:9999px; background:${p.color}; color:white; font-size:9px; font-weight:bold; border:2px solid white; margin-left:-6px;">${(p.name || '?').charAt(0)}</span>`
+            ).join('');
+        }
+
+        // 画面全体のマウス移動を監視し、共同編集中だけ間引きながら配信する
+        document.addEventListener('mousemove', (e) => {
+            if (!collabProjectId) return;
+            broadcastMyCursor(e.clientX, e.clientY);
+        });
+        // ===== ここまで：カーソル共有の仕組み =====
+
         const COLLAB_POLL_INTERVAL_MS = 20 * 1000; // 20秒おきに相手の変更がないか確認
 
         function updateCollabStatusUI() {
@@ -3935,7 +4068,8 @@
                 return;
             }
             if (collabProjectId) {
-                const choice = confirm(`現在の共有ID:\n${collabProjectId}\n\nこのIDを他の人に伝えれば、同じプロジェクトを一緒に編集できます。\n\n「OK」で共同編集を終了して自分だけの下書きに戻ります。\n「キャンセル」でこのまま共同編集を続けます。`);
+                const shareUrl = `${location.origin}${location.pathname}?collab=${encodeURIComponent(collabProjectId)}`;
+                const choice = confirm(`現在の共有リンク:\n${shareUrl}\n\nこのリンクを他の人に送れば、開くだけで同じプロジェクトに参加できます。\n\n「OK」で共同編集を終了して自分だけの下書きに戻ります。\n「キャンセル」でこのまま共同編集を続けます。`);
                 if (choice) stopCollabSync();
                 return;
             }
@@ -3961,7 +4095,8 @@
                     lastCloudSavedAt = now;
                     collabProjectId = projectId;
                     updateCollabStatusUI();
-                    prompt('共有IDが発行されました。この文字列を一緒に編集する人に伝えてください（コピーしてお使いください）:', projectId);
+                    const shareUrl = `${location.origin}${location.pathname}?collab=${encodeURIComponent(projectId)}`;
+                    prompt('共有リンクが発行されました。このリンクを一緒に編集する人に送ってください。\n相手はこのリンクを開くだけで、自動的に共同編集に参加できます（コピーしてお使いください）:', shareUrl);
                 } else {
                     const { data: row, error } = await supabaseClient.from('projects').select('*').eq('id', projectId).single();
                     if (error || !row) {
@@ -3984,12 +4119,14 @@
             }
             if (collabPollTimer) clearInterval(collabPollTimer);
             collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
+            joinCollabCursorChannel(projectId);
         }
 
         function stopCollabSync() {
             collabProjectId = null;
             lastCloudSavedAt = null;
             if (collabPollTimer) { clearInterval(collabPollTimer); collabPollTimer = null; }
+            leaveCollabCursorChannel();
             updateCollabStatusUI();
         }
 
@@ -4014,7 +4151,10 @@
         // 相手の変更がないか、定期的にクラウドを確認する
         async function pollCloudForUpdates() {
             if (!collabProjectId || !supabaseClient) return;
-            if (isModified) return; // 自分の未保存の変更を誤って上書きしないよう、保存済みの時だけ取り込む
+            // 「自分が保存済みの時だけ取り込む」という制限を入れていたが、作業中はほぼ常に
+            // 未保存の変更がある状態になり、実質ずっと同期されなくなってしまっていたため撤廃。
+            // タイムスタンプ比較だけで判定し、相手の方が新しければ取り込む（後から保存した方が
+            // 優先されるという、最初にご説明した仕様通りの動きになる）。
             try {
                 const { data: row, error } = await supabaseClient.from('projects').select('*').eq('id', collabProjectId).single();
                 if (error || !row) return;
@@ -4700,6 +4840,18 @@
             updateUndoRedoUI();
             restoreCategoryLibrary(); // この端末に保存済みの共有カタログがあれば起動時に自動で読み込む
 
+            // URLに「?collab=共有ID」が付いたリンクを開いた場合、ボタン操作なしで
+            // 自動的に新規プロジェクトを開始し、その共有プロジェクトに参加する
+            const collabParam = new URLSearchParams(location.search).get('collab');
+            if (collabParam) {
+                startNewApp();
+                setTimeout(() => {
+                    startCollabSync(collabParam.trim(), false);
+                    // 再読み込みのたびに自動参加し直さないよう、URLからパラメータを消しておく
+                    history.replaceState(null, '', location.pathname);
+                }, 700);
+            }
+
             // 全画面での意図しないドロップ（画像がブラウザ全体で開いてしまう現象）を防止
             window.addEventListener('dragover', (e) => e.preventDefault(), false);
             window.addEventListener('drop', (e) => e.preventDefault(), false);
@@ -4710,9 +4862,17 @@
                 const mainApp = document.getElementById('main-app');
                 if (mainApp && !mainApp.classList.contains('hidden') && isModified) {
                     saveDraft(true).catch(() => {}); // 失敗してもポップアップは出さず、バッジ表示のみに留める
-                    if (collabProjectId) pushCollabChanges();
                 }
             }, 90 * 1000);
+
+            // 共同編集中は、90秒より短い間隔（15秒おき）で自分の変更をクラウドに反映する。
+            // ローカルの下書き保存より頻度を上げることで、相手との「動きのリンク」感が出やすくなる。
+            setInterval(() => {
+                const mainApp = document.getElementById('main-app');
+                if (mainApp && !mainApp.classList.contains('hidden') && isModified && collabProjectId) {
+                    pushCollabChanges();
+                }
+            }, 15 * 1000);
         });
 
         buildCategoryGrid();
