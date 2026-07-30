@@ -2107,30 +2107,30 @@
         // 「1F & 2F FLOOR PLAN」ページの左半分・右半分（それぞれ幅707pxの半分サイズで配置）
         const FIXED_AUTO_PLACE_TEMPLATE = {
             '1f': [
-                { key: 'kitchen',  left: 37,   top: 760, width: 210, height: 160 },
-                { key: 'ldk',      left: 263,  top: 760, width: 210, height: 160 },
-                { key: 'washroom', left: 489,  top: 760, width: 210, height: 160 },
-                { key: 'sic',      left: 715,  top: 760, width: 210, height: 160 },
-                { key: 'japanese', left: 941,  top: 760, width: 210, height: 160 },
-                { key: 'bath',     left: 1167, top: 760, width: 210, height: 160 },
+                { key: 'kitchen',  left: 37,   top: 15, width: 210, height: 160 },
+                { key: 'ldk',      left: 263,  top: 15, width: 210, height: 160 },
+                { key: 'washroom', left: 489,  top: 15, width: 210, height: 160 },
+                { key: 'sic',      left: 715,  top: 15, width: 210, height: 160 },
+                { key: 'japanese', left: 941,  top: 15, width: 210, height: 160 },
+                { key: 'bath',     left: 1167, top: 15, width: 210, height: 160 },
             ],
             '2f': [
-                { key: 'bedroom', left: 263, top: 750, width: 280, height: 200 },
-                { key: 'wic',     left: 567, top: 750, width: 280, height: 200 },
-                { key: 'kids',    left: 871, top: 750, width: 280, height: 200 },
+                { key: 'bedroom', left: 263, top: 15, width: 280, height: 200 },
+                { key: 'wic',     left: 567, top: 15, width: 280, height: 200 },
+                { key: 'kids',    left: 871, top: 15, width: 280, height: 200 },
             ],
             'both1': [
-                { key: 'kitchen',  left: 8,   top: 800, width: 100, height: 90 },
-                { key: 'ldk',      left: 116, top: 800, width: 100, height: 90 },
-                { key: 'washroom', left: 224, top: 800, width: 100, height: 90 },
-                { key: 'sic',      left: 332, top: 800, width: 100, height: 90 },
-                { key: 'japanese', left: 440, top: 800, width: 100, height: 90 },
-                { key: 'bath',     left: 548, top: 800, width: 100, height: 90 },
+                { key: 'kitchen',  left: 8,   top: 15, width: 100, height: 90 },
+                { key: 'ldk',      left: 116, top: 15, width: 100, height: 90 },
+                { key: 'washroom', left: 224, top: 15, width: 100, height: 90 },
+                { key: 'sic',      left: 332, top: 15, width: 100, height: 90 },
+                { key: 'japanese', left: 440, top: 15, width: 100, height: 90 },
+                { key: 'bath',     left: 548, top: 15, width: 100, height: 90 },
             ],
             'both2': [
-                { key: 'bedroom', left: 745,  top: 790, width: 190, height: 110 },
-                { key: 'wic',     left: 950,  top: 790, width: 190, height: 110 },
-                { key: 'kids',    left: 1155, top: 790, width: 190, height: 110 },
+                { key: 'bedroom', left: 745,  top: 15, width: 190, height: 110 },
+                { key: 'wic',     left: 950,  top: 15, width: 190, height: 110 },
+                { key: 'kids',    left: 1155, top: 15, width: 190, height: 110 },
             ],
         };
 
@@ -2208,23 +2208,33 @@
             let placedCount = 0;
             const skippedLabels = [];
             const originalFloor = state.currentFloor;
-            saveHistoryState(); // 自動配置した複数枚をまとめて1回のUndo操作で戻せるようにする
-            isApplyingHistory = true;
-            state.currentFloor = containerFloor; // addPhotoFrameAt内部が参照する「現在階＝追加先コンテナ」を一時的に切り替える
+            try {
+                saveHistoryState(); // 自動配置した複数枚をまとめて1回のUndo操作で戻せるようにする
+                isApplyingHistory = true;
+                state.currentFloor = containerFloor; // addPhotoFrameAt内部が参照する「現在階＝追加先コンテナ」を一時的に切り替える
 
-            template.forEach((slot) => {
-                const photo = pickRandomPhotoForCategory(slot.key);
-                if (!photo) { skippedLabels.push(appCategories.find(c => c.key === slot.key)?.label || slot.key); return; } // その仕様・カテゴリの写真がまだ登録されていない場合はスキップ
-                const frame = addPhotoFrameAt(slot.left, slot.top, photo);
-                if (frame) {
-                    frame.style.width = `${slot.width}px`;
-                    frame.style.height = `${slot.height}px`;
-                }
-                placedCount++;
-            });
-
-            state.currentFloor = originalFloor; // 表示中の階の状態を元に戻す
-            isApplyingHistory = false;
+                template.forEach((slot) => {
+                    try {
+                        const photo = pickRandomPhotoForCategory(slot.key);
+                        if (!photo) { skippedLabels.push(appCategories.find(c => c.key === slot.key)?.label || slot.key); return; } // その仕様・カテゴリの写真がまだ登録されていない場合はスキップ
+                        const frame = addPhotoFrameAt(slot.left, slot.top, photo);
+                        if (frame) {
+                            frame.style.width = `${slot.width}px`;
+                            frame.style.height = `${slot.height}px`;
+                        }
+                        placedCount++;
+                    } catch (slotError) {
+                        // 1件で失敗しても、他の項目の自動配置や以降の通常編集操作に影響が出ないようにする
+                        console.error('自動配置（1件）に失敗:', slot.key, slotError);
+                    }
+                });
+            } catch (e) {
+                console.error('自動配置に失敗:', e);
+                showAutosaveStatus('自動配置中にエラーが発生しました（詳細はブラウザのコンソールをご確認ください）', true);
+            } finally {
+                state.currentFloor = originalFloor; // 表示中の階の状態を、成功・失敗にかかわらず必ず元に戻す
+                isApplyingHistory = false;
+            }
 
             if (placedCount > 0) {
                 isModified = true;
@@ -2234,7 +2244,7 @@
                     msg += `（在庫なし: ${shown}）`;
                 }
                 showAutosaveStatus(msg);
-            } else {
+            } else if (skippedLabels.length > 0) {
                 showAutosaveStatus(`自動配置対象の写真ストックが見つかりませんでした（対象: ${skippedLabels.join('、')}）`, true);
             }
         }
