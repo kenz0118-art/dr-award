@@ -1025,7 +1025,7 @@
         // -------------------------
         let undoStack = [];
         let redoStack = [];
-        const MAX_HISTORY = 20;
+        const MAX_HISTORY = 12; // 図面・写真データを丸ごと保持するため、多すぎるとメモリを圧迫する。件数を絞って安全性を優先
         let isApplyingHistory = false;
         // 矢印キーでの微調整移動が、キー長押しのたびにUndo履歴を消費しないようにするための状態
         let arrowMoveState = { active: false, frameId: null };
@@ -2517,7 +2517,7 @@
         
         function confirmCrop() { 
             if (!cropperInstance) return; 
-            const croppedCanvas = cropperInstance.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048, imageSmoothingEnabled: true, imageSmoothingQuality: 'high' }); 
+            const croppedCanvas = cropperInstance.getCroppedCanvas({ maxWidth: 1400, maxHeight: 1400, imageSmoothingEnabled: true, imageSmoothingQuality: 'high' }); 
 
             if (cropperMode === 'cutout') {
                 let cutoutSuffix = state.currentFloor.toLowerCase();
