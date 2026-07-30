@@ -13,6 +13,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
     <script>
         tailwind.config = {
@@ -487,6 +488,17 @@
                     <i class="fa-solid fa-floppy-disk text-emerald-500"></i> 下書き保存
                 </button>
                 <span id="autosave-status" class="text-[10px] text-neutral-400 font-sans transition-opacity duration-500 opacity-0 select-none whitespace-nowrap"></span>
+
+                <div class="w-[1px] h-5 bg-neutral-200 mx-1"></div>
+
+                <button id="btn-collab-toggle" onclick="toggleCollabMode()" class="bg-white hover:bg-neutral-50 font-bold text-neutral-600 py-2 px-4 rounded-xl flex items-center gap-1.5 border border-neutral-200 transition shadow-sm" title="複数人で同じプロジェクトをクラウド共有して編集します">
+                    <i class="fa-solid fa-users text-sky-500"></i> <span id="collab-btn-label">共同編集</span>
+                </button>
+
+                <button onclick="openAutoPlaceSettings()" class="bg-white hover:bg-neutral-50 font-bold text-neutral-600 py-2 px-4 rounded-xl flex items-center gap-1.5 border border-neutral-200 transition shadow-sm" title="図面を貼った時に自動で写真をランダム配置するカテゴリを設定します">
+                    <i class="fa-solid fa-shuffle text-emerald-500"></i> 自動配置設定
+                </button>
+
                 <button onclick="window.print()" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold py-2 px-6 rounded-xl shadow-md flex items-center gap-1.5 transition transform active:scale-95">
                     <i class="fa-solid fa-file-pdf text-sm"></i> 印刷 / PDF
                 </button>
@@ -900,12 +912,13 @@
                         <button id="photo-back-btn" onclick="backFromPhotos()" class="text-[#6d5955] font-bold text-xs hover:underline flex items-center gap-1 cursor-pointer">
                             <i class="fa-solid fa-chevron-left"></i> 前の画面に戻る
                         </button>
-                        <div class="relative overflow-hidden">
+                        <div id="category-upload-wrapper" class="relative overflow-hidden">
                             <button class="bg-[#6d5955] text-white text-xs px-5 py-2 rounded hover:opacity-90 shadow-sm transition font-bold cursor-pointer">
                                 <i class="fa-solid fa-cloud-arrow-up mr-1"></i> パソコンから写真を追加保存
                             </button>
                             <input type="file" accept="image/*" multiple class="absolute inset-0 opacity-0 cursor-pointer" onchange="uploadPhotosToCategory(this)">
                         </div>
+                        <p id="category-upload-disabled-note" class="hidden text-[10px] text-neutral-400 font-sans">写真を追加するには、右上の「前の画面に戻る」から仕様シリーズを選んでください</p>
                     </div>
                     <div id="category-photos-grid" class="grid grid-cols-4 gap-4 overflow-y-auto flex-1 p-1 content-start min-h-0"></div>
                 </div>
@@ -914,6 +927,30 @@
             <div class="bg-white border-t border-neutral-100 px-6 py-4 flex justify-between items-center flex-shrink-0">
                 <button onclick="resetAllCategoryData()" class="text-[#8a7673] text-xs underline hover:text-red-500 transition cursor-pointer">保存した追加データをリセットする</button>
                 <button onclick="closeCategoryModal()" class="bg-[#5c4a47] text-white px-8 py-2 rounded text-sm hover:opacity-95 shadow transition font-medium cursor-pointer tracking-wider">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 写真の自動配置（設定：どのカテゴリを自動で貼るか） -->
+    <div id="auto-place-modal" class="no-print fixed inset-0 bg-neutral-900/60 backdrop-blur-sm z-[250] flex items-center justify-center hidden">
+        <div class="bg-white rounded shadow-2xl w-full max-w-2xl max-h-[82vh] flex flex-col overflow-hidden">
+            <div class="bg-[#6d5955] px-6 py-4 flex justify-between items-center text-white font-medium shadow-sm flex-shrink-0">
+                <span class="tracking-wider text-base font-serif">写真の自動配置 設定</span>
+                <button onclick="closeAutoPlaceSettings()" class="text-white/80 hover:text-white text-xl cursor-pointer transition"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="flex-1 min-h-0 p-6 bg-[#faf9f6] flex flex-col overflow-hidden gap-4">
+                <label class="flex items-center gap-2 text-sm font-bold text-[#51403e] cursor-pointer select-none">
+                    <input type="checkbox" id="auto-place-enabled" class="w-4 h-4">
+                    図面を切り取り・設定したら、下記の固定カテゴリの写真を自動でランダムに貼る
+                </label>
+                <p class="text-xs text-neutral-500 font-sans leading-relaxed">
+                    「商品タイプ」に合った仕様（グレイス／スマート／ラシック）の写真が、あらかじめ決めた位置・サイズで自動配置されます。<br>
+                    配置される写真の在庫が無いカテゴリはスキップされます。あとから手動で写真を差し替えたり、動かしたりすることもできます。
+                </p>
+                <div id="auto-place-category-grid" class="overflow-y-auto flex-1 content-start pr-1 flex flex-col gap-3 text-xs font-sans text-[#51403e]"></div>
+            </div>
+            <div class="bg-white border-t border-neutral-100 px-6 py-4 flex justify-end gap-3 flex-shrink-0">
+                <button onclick="closeAutoPlaceSettings()" class="bg-[#5c4a47] text-white px-8 py-2 rounded text-sm hover:opacity-95 shadow transition font-medium cursor-pointer tracking-wider">保存して閉じる</button>
             </div>
         </div>
     </div>
@@ -1557,6 +1594,20 @@
             { key: 'den', label: '書斎' }, { key: 'kids', label: '子供部屋' }, { key: 'japanese', label: '和室' }
         ];
         const seriesRequiredCategories = ['kitchen', 'bath', 'washroom', 'sic'];
+        const seriesLabels = { grace: 'グレイス シリーズ', smart: 'スマート シリーズ', lasic: 'ラシック シリーズ' };
+        // 商品タイプを選ぶと、対応する仕様シリーズの写真だけが自動で絞り込まれるようにするための対応表。
+        // 「百年」「SAISON」は対応関係が未定のため、いったんすべての仕様の写真をまとめて表示する。
+        const productTypeToSeriesMap = {
+            'GRAND SAISON': 'grace',
+            'GRAND SMART': 'grace',
+            'i-smart': 'smart',
+            'Brillant': 'lasic',
+            'i-cube': 'lasic',
+            'Naturia': 'lasic',
+            'i-smile+': 'lasic',
+            'i-smile': 'lasic',
+            'HUGme': 'lasic',
+        };
 
         let categoryImagesMemory = {
             kitchen: { grace: [], smart: [], lasic: [] }, ldk: [], void: [], ext: [], ent: [], bedroom: [], toilet: [], 
@@ -1799,8 +1850,22 @@
         function clickCategory(key, label) {
             state.selectedCategoryKey = key;
             if (seriesRequiredCategories.includes(key)) {
-                document.getElementById('modal-title-text').textContent = `${label} ＞ 仕様シリーズを選択`;
-                document.getElementById('modal-view-categories').classList.add('hidden'); document.getElementById('modal-view-series').classList.remove('hidden');
+                const mappedSeries = productTypeToSeriesMap[inputType.value];
+                if (mappedSeries) {
+                    // 選択中の商品タイプに合った仕様シリーズへ自動的に絞り込んで、写真一覧を直接表示する
+                    state.selectedSeriesKey = mappedSeries;
+                    document.getElementById('modal-title-text').textContent = `${label} ＞ ${seriesLabels[mappedSeries]}（${inputType.value}）の写真一覧`;
+                    document.getElementById('modal-view-categories').classList.add('hidden');
+                    document.getElementById('modal-view-photos').classList.remove('hidden');
+                    renderCategoryPhotos();
+                } else {
+                    // 対応表にない商品タイプ（百年・SAISONなど）は、いったん全仕様の写真をまとめて表示する
+                    state.selectedSeriesKey = null;
+                    document.getElementById('modal-title-text').textContent = `${label} ＞ すべての仕様の写真一覧`;
+                    document.getElementById('modal-view-categories').classList.add('hidden');
+                    document.getElementById('modal-view-photos').classList.remove('hidden');
+                    renderCategoryPhotos();
+                }
             } else {
                 state.selectedSeriesKey = null; document.getElementById('modal-title-text').textContent = `${label} の写真一覧`;
                 document.getElementById('modal-view-categories').classList.add('hidden'); document.getElementById('modal-view-photos').classList.remove('hidden');
@@ -1831,10 +1896,32 @@
 
         function renderCategoryPhotos() {
             const grid = document.getElementById('category-photos-grid'); grid.innerHTML = '';
-            let images = state.selectedSeriesKey ? (categoryImagesMemory[state.selectedCategoryKey][state.selectedSeriesKey] || []) : (categoryImagesMemory[state.selectedCategoryKey] || []);
-            if(images.length === 0) { grid.innerHTML = `<div class="col-span-4 text-center py-16 text-neutral-500 text-xs font-sans"><i class="fa-solid fa-folder-open text-4xl mb-2 block text-neutral-300"></i>この項目に登録された写真はありません。<br>上のボタンから写真を追加してください。</div>`; return; }
+            const catKey = state.selectedCategoryKey;
+            const combinedView = seriesRequiredCategories.includes(catKey) && !state.selectedSeriesKey;
+
+            // 「すべての仕様」をまとめて見ている間は、どの仕様に保存すべきか決められないため、
+            // 新規アップロードはいったん無効にする（仕様シリーズを選べば通常通りアップロードできる）
+            const uploadWrapper = document.getElementById('category-upload-wrapper');
+            const uploadNote = document.getElementById('category-upload-disabled-note');
+            if (uploadWrapper) uploadWrapper.classList.toggle('hidden', combinedView);
+            if (uploadNote) uploadNote.classList.toggle('hidden', !combinedView);
+
+            let entries; // [{ base64, seriesKey }] の形にそろえる（削除時にどの仕様の配列から消すか判別するため）
+            if (combinedView) {
+                const mem = categoryImagesMemory[catKey] || {};
+                entries = [];
+                ['grace', 'smart', 'lasic'].forEach(sKey => {
+                    (mem[sKey] || []).forEach(b64 => entries.push({ base64: b64, seriesKey: sKey }));
+                });
+            } else if (state.selectedSeriesKey) {
+                entries = (categoryImagesMemory[catKey][state.selectedSeriesKey] || []).map(b64 => ({ base64: b64, seriesKey: state.selectedSeriesKey }));
+            } else {
+                entries = (categoryImagesMemory[catKey] || []).map(b64 => ({ base64: b64, seriesKey: null }));
+            }
+
+            if(entries.length === 0) { grid.innerHTML = `<div class="col-span-4 text-center py-16 text-neutral-500 text-xs font-sans"><i class="fa-solid fa-folder-open text-4xl mb-2 block text-neutral-300"></i>この項目に登録された写真はありません。<br>上のボタンから写真を追加してください。</div>`; return; }
             
-            images.forEach((base64, index) => {
+            entries.forEach(({ base64, seriesKey }, index) => {
                 const wrapper = document.createElement('div'); 
                 wrapper.className = 'relative w-full h-0 pb-[100%] bg-neutral-100 border border-neutral-200 rounded-xl overflow-hidden cursor-pointer group shadow-md hover:border-amber-500 hover:scale-[1.02] transition-all duration-200';
                 
@@ -1847,7 +1934,7 @@
                 
                 const label = document.createElement('div');
                 label.className = 'absolute bottom-2 left-1/2 transform -translate-x-1/2 bg-white/90 backdrop-blur-[2px] px-2.5 py-1 flex items-center justify-center text-[10px] font-bold text-amber-600 rounded-lg border border-neutral-200 shadow-md pointer-events-none z-10 whitespace-nowrap';
-                label.textContent = `写真 ${index + 1}`;
+                label.textContent = combinedView ? `写真 ${index + 1}（${seriesLabels[seriesKey] || seriesKey}）` : `写真 ${index + 1}`;
                 
                 const delBtn = document.createElement('button'); 
                 delBtn.className = 'absolute top-2 right-2 bg-black/70 text-neutral-300 hover:text-white hover:bg-red-600 rounded-full w-6 h-6 flex items-center justify-center text-[11px] opacity-0 group-hover:opacity-100 transition-opacity z-20 cursor-pointer';
@@ -1855,7 +1942,7 @@
                 delBtn.onclick = (e) => { 
                     e.stopPropagation(); 
                     if(confirm("この写真をストックから完全に削除しますか？")) { 
-                        let targetList = state.selectedSeriesKey ? categoryImagesMemory[state.selectedCategoryKey][state.selectedSeriesKey] : categoryImagesMemory[state.selectedCategoryKey]; 
+                        let targetList = seriesKey ? categoryImagesMemory[catKey][seriesKey] : categoryImagesMemory[catKey]; 
                         const idx = targetList.indexOf(base64); 
                         if(idx > -1) { targetList.splice(idx, 1); saveHistoryState(); renderCategoryPhotos(); } 
                     } 
@@ -1883,6 +1970,11 @@
 
         function uploadPhotosToCategory(input) {
             const files = input.files; if(files.length === 0) return; let loaded = 0;
+            if (seriesRequiredCategories.includes(state.selectedCategoryKey) && !state.selectedSeriesKey) {
+                alert('「すべての仕様」をまとめて見ている間は、どの仕様に保存すべきか決められないため写真を追加できません。\n「前の画面に戻る」から仕様シリーズを選んでから追加してください。');
+                input.value = '';
+                return;
+            }
             saveHistoryState();
             const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
             if (imageFiles.length === 0) { input.value = ''; return; }
@@ -2002,6 +2094,122 @@
         }
 
         function resetAllCategoryData() { if(confirm("これまでに全カテゴリ・シリーズにストックしたすべての写真データが完全にリセットされます。この端末に保存されている共有カタログも削除され、次回から再度読込が必要になります。よろしいですか？")) { saveHistoryState(); Object.keys(categoryImagesMemory).forEach(k => { if (seriesRequiredCategories.includes(k)) { categoryImagesMemory[k] = { grace: [], smart: [], lasic: [] }; } else { categoryImagesMemory[k] = []; } }); deleteCategoryLibraryFromDB(); backToCategories(); } }
+
+        // ===== 写真の自動配置機能 =====
+        // 図面（背景）を設定した直後に、あらかじめ選んでおいたカテゴリの写真を、
+        // 現在の「商品タイプ」に合った仕様シリーズからランダムに1枚ずつ選んで、あらかじめ決めた
+        // 位置・サイズ（固定テンプレート）に自動配置する。ON/OFFの設定だけがこの端末に保存される。
+        const AUTO_PLACE_STORAGE_KEY = 'drAward_autoPlaceSettings';
+
+        // 階ごとに「どのカテゴリを・どこに・どのサイズで」自動配置するかを固定した設定
+        // （1414×1000pxのページ下部に横並びで配置。図面はこの帯の上に置く想定）
+        const FIXED_AUTO_PLACE_TEMPLATE = {
+            '1f': [
+                { key: 'kitchen',  left: 37,   top: 760, width: 210, height: 160 },
+                { key: 'ldk',      left: 263,  top: 760, width: 210, height: 160 },
+                { key: 'washroom', left: 489,  top: 760, width: 210, height: 160 },
+                { key: 'sic',      left: 715,  top: 760, width: 210, height: 160 },
+                { key: 'japanese', left: 941,  top: 760, width: 210, height: 160 },
+                { key: 'bath',     left: 1167, top: 760, width: 210, height: 160 },
+            ],
+            '2f': [
+                { key: 'bedroom', left: 263, top: 750, width: 280, height: 200 },
+                { key: 'wic',     left: 567, top: 750, width: 280, height: 200 },
+                { key: 'kids',    left: 871, top: 750, width: 280, height: 200 },
+            ],
+        };
+
+        function getAutoPlaceSettings() {
+            try {
+                const raw = localStorage.getItem(AUTO_PLACE_STORAGE_KEY);
+                if (!raw) return { enabled: false };
+                const parsed = JSON.parse(raw);
+                return { enabled: !!parsed.enabled };
+            } catch (e) {
+                return { enabled: false };
+            }
+        }
+
+        function saveAutoPlaceSettings(settings) {
+            try { localStorage.setItem(AUTO_PLACE_STORAGE_KEY, JSON.stringify(settings)); } catch (e) { console.error(e); }
+        }
+
+        function openAutoPlaceSettings() {
+            const settings = getAutoPlaceSettings();
+            document.getElementById('auto-place-enabled').checked = settings.enabled;
+            const grid = document.getElementById('auto-place-category-grid');
+            grid.innerHTML = '';
+            Object.entries(FIXED_AUTO_PLACE_TEMPLATE).forEach(([suffix, slots]) => {
+                const floorLabel = suffix === '1f' ? '1階' : '2階';
+                const row = document.createElement('div');
+                row.className = 'bg-white border border-neutral-200 rounded-lg p-3';
+                const labels = slots.map(s => appCategories.find(c => c.key === s.key)?.label || s.key).join('、');
+                row.innerHTML = `<span class="font-bold text-amber-700">${floorLabel}</span>：${labels}`;
+                grid.appendChild(row);
+            });
+            document.getElementById('auto-place-modal').classList.remove('hidden');
+        }
+
+        function closeAutoPlaceSettings() {
+            const enabled = document.getElementById('auto-place-enabled').checked;
+            saveAutoPlaceSettings({ enabled: enabled });
+            document.getElementById('auto-place-modal').classList.add('hidden');
+        }
+
+        // 指定カテゴリから、現在の商品タイプに合った写真をランダムに1枚選ぶ（在庫がなければnull）
+        function pickRandomPhotoForCategory(catKey) {
+            let pool;
+            if (seriesRequiredCategories.includes(catKey)) {
+                const mappedSeries = productTypeToSeriesMap[inputType.value];
+                const mem = categoryImagesMemory[catKey] || {};
+                if (mappedSeries) {
+                    pool = mem[mappedSeries] || [];
+                } else {
+                    // 対応表にない商品タイプは、3仕様まとめた中からランダムに選ぶ
+                    pool = [...(mem.grace || []), ...(mem.smart || []), ...(mem.lasic || [])];
+                }
+            } else {
+                // LDK・寝室・ウォークイン・子供部屋・和室などは仕様シリーズの区別が無いため、
+                // 商品タイプに関わらず同じ写真ストックからランダムに選ぶ
+                pool = categoryImagesMemory[catKey] || [];
+            }
+            if (!pool || pool.length === 0) return null;
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        // 図面（背景 or 切り取り）を設定した直後に、対象の階（suffix: '1f' / '2f'）に
+        // 固定テンプレートの位置・サイズで写真を自動配置する。1f・2f以外の階は対象外。
+        function autoPlaceRandomPhotos(suffix) {
+            const settings = getAutoPlaceSettings();
+            if (!settings.enabled) return;
+            const template = FIXED_AUTO_PLACE_TEMPLATE[suffix];
+            if (!template) return; // 外観など、テンプレート未定義の階は対象外
+
+            let placedCount = 0;
+            const originalFloor = state.currentFloor;
+            saveHistoryState(); // 自動配置した複数枚をまとめて1回のUndo操作で戻せるようにする
+            isApplyingHistory = true;
+            state.currentFloor = suffix.toUpperCase(); // addPhotoFrameAt内部が参照する現在階を一時的に切り替える
+
+            template.forEach((slot) => {
+                const photo = pickRandomPhotoForCategory(slot.key);
+                if (!photo) return; // その仕様・カテゴリの写真がまだ登録されていない場合はスキップ
+                const frame = addPhotoFrameAt(slot.left, slot.top, photo);
+                if (frame) {
+                    frame.style.width = `${slot.width}px`;
+                    frame.style.height = `${slot.height}px`;
+                }
+                placedCount++;
+            });
+
+            state.currentFloor = originalFloor; // 表示中の階の状態を元に戻す
+            isApplyingHistory = false;
+
+            if (placedCount > 0) {
+                isModified = true;
+                showAutosaveStatus(`写真を${placedCount}件、自動配置しました`);
+            }
+        }
 
         function resizeFrame(frame, delta) {
             saveHistoryState();
@@ -2274,8 +2482,11 @@
             const croppedCanvas = cropperInstance.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048, imageSmoothingEnabled: true, imageSmoothingQuality: 'high' }); 
 
             if (cropperMode === 'cutout') {
+                let cutoutSuffix = state.currentFloor.toLowerCase();
+                if (cutoutSuffix === 'both') cutoutSuffix = state.activeBothTarget;
                 addFloorplanCutoutFrame(croppedCanvas.toDataURL('image/png'), croppedCanvas.width, croppedCanvas.height);
                 closeCropperModal();
+                autoPlaceRandomPhotos(cutoutSuffix); // 図面を切り取って配置した直後、設定に応じて写真を自動配置する
                 return;
             }
 
@@ -2283,6 +2494,7 @@
             if (suffix === 'both') suffix = state.activeBothTarget;
             setFinalBackground(suffix, croppedCanvas.toDataURL('image/png'));
             closeCropperModal(); 
+            autoPlaceRandomPhotos(suffix); // 図面(背景)を貼った直後、設定に応じて写真を自動配置する
         }
 
         // 表示中の図面から一部を切り取って、自由に動かせる新しいパーツとして配置するツールを開く
@@ -3050,6 +3262,7 @@
             focusFrame(frame); 
             renumberMarkers(state.currentFloor); 
             checkMenuPlacement(frame);
+            return frame;
         }
         function addPhotoFrame() { const spawn = getCascadePosition(state.currentFloor.toLowerCase(), 'photo', 60, 60); addPhotoFrameAt(spawn.left, spawn.top, null); }
 
@@ -3641,6 +3854,143 @@
                     alert('保存に失敗しました。画像のサイズが大きすぎるか、ブラウザの容量制限の可能性があります。');
                 }
                 throw e; 
+            }
+        }
+
+        // ===== 共同編集（クラウド共有）機能 =====
+        // Supabaseの無料プロジェクトに、プロジェクトデータ(JSON)を丸ごと1行として保存・取得することで、
+        // 複数人が同じ「共有ID」を使ってプロジェクトを開けば、お互いの変更がポーリングを通じて
+        // 数十秒以内に反映される、という簡易的な共同編集を実現する。
+        // （Googleドキュメントのような文字単位のリアルタイム同時編集ではなく、
+        //   「最後に保存した人の内容が反映される」方式のシンプルな共有）
+        const SUPABASE_URL = 'https://tehzyzwwezcyjbcgxcde.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlaHp5end3ZXpjeWpiY2d4Y2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxMzIzMDMsImV4cCI6MjEwMDcwODMwM30.UJ-AsktHcsT5DIdzG7j_fv_pmSM-wgG6VVS9blE9IeE';
+        let supabaseClient = null;
+        try {
+            if (window.supabase && window.supabase.createClient) {
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            }
+        } catch (e) { console.error('Supabase init failed:', e); }
+
+        let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
+        let collabPollTimer = null;   // クラウドの変更を定期的に確認するタイマー
+        let lastCloudSavedAt = null;  // 直近でクラウドに反映した時刻（自分の変更との区別用）
+        const COLLAB_POLL_INTERVAL_MS = 20 * 1000; // 20秒おきに相手の変更がないか確認
+
+        function updateCollabStatusUI() {
+            const btn = document.getElementById('btn-collab-toggle');
+            const label = document.getElementById('collab-btn-label');
+            if (!btn || !label) return;
+            if (collabProjectId) {
+                label.textContent = `共同編集中`;
+                btn.classList.add('!bg-sky-50', '!border-sky-300', '!text-sky-700');
+                btn.title = `共有ID: ${collabProjectId}（クリックで共有ID確認・終了）`;
+            } else {
+                label.textContent = '共同編集';
+                btn.classList.remove('!bg-sky-50', '!border-sky-300', '!text-sky-700');
+                btn.title = '複数人で同じプロジェクトをクラウド共有して編集します';
+            }
+        }
+
+        async function toggleCollabMode() {
+            if (!supabaseClient) {
+                alert('共同編集機能の初期化に失敗しました。通信環境をご確認のうえ、ページを再読み込みしてください。');
+                return;
+            }
+            if (collabProjectId) {
+                const choice = confirm(`現在の共有ID:\n${collabProjectId}\n\nこのIDを他の人に伝えれば、同じプロジェクトを一緒に編集できます。\n\n「OK」で共同編集を終了して自分だけの下書きに戻ります。\n「キャンセル」でこのまま共同編集を続けます。`);
+                if (choice) stopCollabSync();
+                return;
+            }
+            const isNew = confirm('共同編集を始めます。\n\n「OK」→ 今のプロジェクトを新しく共有用として発行します（あなたが最初の作成者）。\n「キャンセル」→ 誰かから受け取った共有IDを入力して参加します。');
+            if (isNew) {
+                const newId = 'proj-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+                await startCollabSync(newId, true);
+            } else {
+                const inputId = prompt('共有ID（相手から伝えられた文字列）を入力してください');
+                if (inputId && inputId.trim()) {
+                    await startCollabSync(inputId.trim(), false);
+                }
+            }
+        }
+
+        async function startCollabSync(projectId, isNew) {
+            try {
+                if (isNew) {
+                    const data = getProjectData();
+                    const now = new Date().toISOString();
+                    const { error } = await supabaseClient.from('projects').upsert({ id: projectId, data: data, created_at: now });
+                    if (error) throw error;
+                    lastCloudSavedAt = now;
+                    collabProjectId = projectId;
+                    updateCollabStatusUI();
+                    prompt('共有IDが発行されました。この文字列を一緒に編集する人に伝えてください（コピーしてお使いください）:', projectId);
+                } else {
+                    const { data: row, error } = await supabaseClient.from('projects').select('*').eq('id', projectId).single();
+                    if (error || !row) {
+                        alert('その共有IDのプロジェクトが見つかりませんでした。IDを確認してもう一度お試しください。');
+                        return;
+                    }
+                    isApplyingHistory = true;
+                    applyProjectData(row.data);
+                    isApplyingHistory = false;
+                    lastCloudSavedAt = row.created_at;
+                    collabProjectId = projectId;
+                    isModified = false;
+                    updateCollabStatusUI();
+                    showAutosaveStatus('共有プロジェクトを読み込みました');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('共同編集の開始に失敗しました。通信環境をご確認のうえ、もう一度お試しください。');
+                return;
+            }
+            if (collabPollTimer) clearInterval(collabPollTimer);
+            collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
+        }
+
+        function stopCollabSync() {
+            collabProjectId = null;
+            lastCloudSavedAt = null;
+            if (collabPollTimer) { clearInterval(collabPollTimer); collabPollTimer = null; }
+            updateCollabStatusUI();
+        }
+
+        // 自分の変更をクラウドに反映する（90秒おきの自動保存タイマーから呼ばれる）
+        async function pushCollabChanges() {
+            if (!collabProjectId || !supabaseClient) return;
+            try {
+                const data = getProjectData();
+                const now = new Date().toISOString();
+                const { error } = await supabaseClient.from('projects').upsert({ id: collabProjectId, data: data, created_at: now });
+                if (error) throw error;
+                lastCloudSavedAt = now;
+                const hh = String(new Date().getHours()).padStart(2, '0');
+                const mm = String(new Date().getMinutes()).padStart(2, '0');
+                showAutosaveStatus(`共有相手に反映しました（${hh}:${mm}）`);
+            } catch (e) {
+                console.error(e);
+                showAutosaveStatus('クラウドへの反映に失敗しました', true);
+            }
+        }
+
+        // 相手の変更がないか、定期的にクラウドを確認する
+        async function pollCloudForUpdates() {
+            if (!collabProjectId || !supabaseClient) return;
+            if (isModified) return; // 自分の未保存の変更を誤って上書きしないよう、保存済みの時だけ取り込む
+            try {
+                const { data: row, error } = await supabaseClient.from('projects').select('*').eq('id', collabProjectId).single();
+                if (error || !row) return;
+                if (row.created_at && row.created_at !== lastCloudSavedAt) {
+                    isApplyingHistory = true;
+                    applyProjectData(row.data);
+                    isApplyingHistory = false;
+                    isModified = false;
+                    lastCloudSavedAt = row.created_at;
+                    showAutosaveStatus('相手の変更を取り込みました');
+                }
+            } catch (e) {
+                console.error(e);
             }
         }
 
@@ -4313,6 +4663,7 @@
                 const mainApp = document.getElementById('main-app');
                 if (mainApp && !mainApp.classList.contains('hidden') && isModified) {
                     saveDraft(true).catch(() => {}); // 失敗してもポップアップは出さず、バッジ表示のみに留める
+                    if (collabProjectId) pushCollabChanges();
                 }
             }, 90 * 1000);
         });
