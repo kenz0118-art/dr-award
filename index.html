@@ -2103,6 +2103,8 @@
 
         // 階ごとに「どのカテゴリを・どこに・どのサイズで」自動配置するかを固定した設定
         // （1414×1000pxのページ下部に横並びで配置。図面はこの帯の上に置く想定）
+        // '1f'/'2f' = 1階・2階それぞれ単独のページ、'both1'/'both2' = 1階・2階を1ページに並べた
+        // 「1F & 2F FLOOR PLAN」ページの左半分・右半分（それぞれ幅707pxの半分サイズで配置）
         const FIXED_AUTO_PLACE_TEMPLATE = {
             '1f': [
                 { key: 'kitchen',  left: 37,   top: 760, width: 210, height: 160 },
@@ -2117,7 +2119,24 @@
                 { key: 'wic',     left: 567, top: 750, width: 280, height: 200 },
                 { key: 'kids',    left: 871, top: 750, width: 280, height: 200 },
             ],
+            'both1': [
+                { key: 'kitchen',  left: 8,   top: 800, width: 100, height: 90 },
+                { key: 'ldk',      left: 116, top: 800, width: 100, height: 90 },
+                { key: 'washroom', left: 224, top: 800, width: 100, height: 90 },
+                { key: 'sic',      left: 332, top: 800, width: 100, height: 90 },
+                { key: 'japanese', left: 440, top: 800, width: 100, height: 90 },
+                { key: 'bath',     left: 548, top: 800, width: 100, height: 90 },
+            ],
+            'both2': [
+                { key: 'bedroom', left: 745,  top: 790, width: 190, height: 110 },
+                { key: 'wic',     left: 950,  top: 790, width: 190, height: 110 },
+                { key: 'kids',    left: 1155, top: 790, width: 190, height: 110 },
+            ],
         };
+
+        // 自動配置のテンプレートキーごとに、実際に写真フレームを追加すべきコンテナ（現在階）を対応させる。
+        // both1・both2は見た目上は左右に分かれているが、実体は同じ frames-both コンテナに追加される。
+        const AUTO_PLACE_CONTAINER_FLOOR = { '1f': '1F', '2f': '2F', 'both1': 'BOTH', 'both2': 'BOTH' };
 
         function getAutoPlaceSettings() {
             try {
@@ -2139,12 +2158,12 @@
             document.getElementById('auto-place-enabled').checked = settings.enabled;
             const grid = document.getElementById('auto-place-category-grid');
             grid.innerHTML = '';
+            const floorLabels = { '1f': '1階のページ', '2f': '2階のページ', 'both1': '「1F & 2F」ページの1階側', 'both2': '「1F & 2F」ページの2階側' };
             Object.entries(FIXED_AUTO_PLACE_TEMPLATE).forEach(([suffix, slots]) => {
-                const floorLabel = suffix === '1f' ? '1階' : '2階';
                 const row = document.createElement('div');
                 row.className = 'bg-white border border-neutral-200 rounded-lg p-3';
                 const labels = slots.map(s => appCategories.find(c => c.key === s.key)?.label || s.key).join('、');
-                row.innerHTML = `<span class="font-bold text-amber-700">${floorLabel}</span>：${labels}`;
+                row.innerHTML = `<span class="font-bold text-amber-700">${floorLabels[suffix] || suffix}</span>：${labels}`;
                 grid.appendChild(row);
             });
             document.getElementById('auto-place-modal').classList.remove('hidden');
@@ -2177,19 +2196,20 @@
             return pool[Math.floor(Math.random() * pool.length)];
         }
 
-        // 図面（背景 or 切り取り）を設定した直後に、対象の階（suffix: '1f' / '2f'）に
-        // 固定テンプレートの位置・サイズで写真を自動配置する。1f・2f以外の階は対象外。
+        // 図面（背景 or 切り取り）を設定した直後に、対象のテンプレートキー（'1f'/'2f'/'both1'/'both2'）に
+        // 応じた固定の位置・サイズで写真を自動配置する。テンプレート未定義の階（外観など）は対象外。
         function autoPlaceRandomPhotos(suffix) {
             const settings = getAutoPlaceSettings();
             if (!settings.enabled) return;
             const template = FIXED_AUTO_PLACE_TEMPLATE[suffix];
-            if (!template) return; // 外観など、テンプレート未定義の階は対象外
+            const containerFloor = AUTO_PLACE_CONTAINER_FLOOR[suffix];
+            if (!template || !containerFloor) return;
 
             let placedCount = 0;
             const originalFloor = state.currentFloor;
             saveHistoryState(); // 自動配置した複数枚をまとめて1回のUndo操作で戻せるようにする
             isApplyingHistory = true;
-            state.currentFloor = suffix.toUpperCase(); // addPhotoFrameAt内部が参照する現在階を一時的に切り替える
+            state.currentFloor = containerFloor; // addPhotoFrameAt内部が参照する「現在階＝追加先コンテナ」を一時的に切り替える
 
             template.forEach((slot) => {
                 const photo = pickRandomPhotoForCategory(slot.key);
@@ -2208,6 +2228,8 @@
             if (placedCount > 0) {
                 isModified = true;
                 showAutosaveStatus(`写真を${placedCount}件、自動配置しました`);
+            } else {
+                showAutosaveStatus('自動配置対象の写真ストックが見つかりませんでした', true);
             }
         }
 
