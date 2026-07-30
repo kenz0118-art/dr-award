@@ -3954,7 +3954,7 @@
         async function startCollabSync(projectId, isNew) {
             try {
                 if (isNew) {
-                    const data = getProjectData();
+                    const data = getProjectDataForCollab();
                     const now = new Date().toISOString();
                     const { error } = await supabaseClient.from('projects').upsert({ id: projectId, data: data, created_at: now });
                     if (error) throw error;
@@ -3997,7 +3997,7 @@
         async function pushCollabChanges() {
             if (!collabProjectId || !supabaseClient) return;
             try {
-                const data = getProjectData();
+                const data = getProjectDataForCollab();
                 const now = new Date().toISOString();
                 const { error } = await supabaseClient.from('projects').upsert({ id: collabProjectId, data: data, created_at: now });
                 if (error) throw error;
@@ -4029,6 +4029,16 @@
             } catch (e) {
                 console.error(e);
             }
+        }
+
+        // 共同編集(クラウド同期)専用の軽量データを作る。
+        // 写真ストック（共有カタログ）は各端末にローカル保存されるもので、本来プロジェクトの
+        // レイアウト共有には不要なため、ここでは含めない（これを含めていたことが、自動保存・
+        // 自動同期のたびに大量データを送受信しメモリを圧迫していた主な原因だったため除外する）。
+        function getProjectDataForCollab() {
+            const data = getProjectData();
+            delete data.categoryImagesMemory;
+            return data;
         }
 
         function exportProject() {
