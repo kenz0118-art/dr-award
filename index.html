@@ -2206,6 +2206,7 @@
             if (!template || !containerFloor) return;
 
             let placedCount = 0;
+            const skippedLabels = [];
             const originalFloor = state.currentFloor;
             saveHistoryState(); // 自動配置した複数枚をまとめて1回のUndo操作で戻せるようにする
             isApplyingHistory = true;
@@ -2213,7 +2214,7 @@
 
             template.forEach((slot) => {
                 const photo = pickRandomPhotoForCategory(slot.key);
-                if (!photo) return; // その仕様・カテゴリの写真がまだ登録されていない場合はスキップ
+                if (!photo) { skippedLabels.push(appCategories.find(c => c.key === slot.key)?.label || slot.key); return; } // その仕様・カテゴリの写真がまだ登録されていない場合はスキップ
                 const frame = addPhotoFrameAt(slot.left, slot.top, photo);
                 if (frame) {
                     frame.style.width = `${slot.width}px`;
@@ -2227,9 +2228,14 @@
 
             if (placedCount > 0) {
                 isModified = true;
-                showAutosaveStatus(`写真を${placedCount}件、自動配置しました`);
+                let msg = `写真を${placedCount}件、自動配置しました`;
+                if (skippedLabels.length > 0) {
+                    const shown = skippedLabels.slice(0, 3).join('、') + (skippedLabels.length > 3 ? ` 他${skippedLabels.length - 3}件` : '');
+                    msg += `（在庫なし: ${shown}）`;
+                }
+                showAutosaveStatus(msg);
             } else {
-                showAutosaveStatus('自動配置対象の写真ストックが見つかりませんでした', true);
+                showAutosaveStatus(`自動配置対象の写真ストックが見つかりませんでした（対象: ${skippedLabels.join('、')}）`, true);
             }
         }
 
