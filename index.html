@@ -4014,6 +4014,12 @@
                 .subscribe(async (status) => {
                     if (status === 'SUBSCRIBED') {
                         await collabCursorChannel.track({ name: myCollabName, color: myCollabColor });
+                    } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                        // 通信が一瞬途切れた等で接続が切れた場合、少し待ってから自動で繋ぎ直す
+                        // （まだこの共有IDで共同編集中の場合のみ再接続し、既に終了していれば何もしない）
+                        if (collabProjectId === projectId) {
+                            setTimeout(() => { if (collabProjectId === projectId) joinCollabCursorChannel(projectId); }, 3000);
+                        }
                     }
                 });
         }
@@ -4149,15 +4155,19 @@
         }
 
         // 相手の変更がないか、定期的にクラウドを確認する
+        let lastPollAttemptAt = 0; // 見張り役が「ポーリングが本当に動き続けているか」を判断するための記録
+
         async function pollCloudForUpdates() {
             if (!collabProjectId || !supabaseClient) return;
+            lastPollAttemptAt = Date.now();
             // 「自分が保存済みの時だけ取り込む」という制限を入れていたが、作業中はほぼ常に
             // 未保存の変更がある状態になり、実質ずっと同期されなくなってしまっていたため撤廃。
             // タイムスタンプ比較だけで判定し、相手の方が新しければ取り込む（後から保存した方が
             // 優先されるという、最初にご説明した仕様通りの動きになる）。
             try {
                 const { data: row, error } = await supabaseClient.from('projects').select('*').eq('id', collabProjectId).single();
-                if (error || !row) return;
+                if (error) { console.error('pollCloudForUpdates error:', error); showAutosaveStatus('相手の変更の確認に失敗しました', true); return; }
+                if (!row) return;
                 if (row.created_at && row.created_at !== lastCloudSavedAt) {
                     isApplyingHistory = true;
                     applyProjectData(row.data);
@@ -4168,6 +4178,7 @@
                 }
             } catch (e) {
                 console.error(e);
+                showAutosaveStatus('相手の変更の確認に失敗しました（通信エラー）', true);
             }
         }
 
@@ -4873,6 +4884,23 @@
                     pushCollabChanges();
                 }
             }, 15 * 1000);
+
+            // カーソル共有の接続、および実際のデータ同期(ポーリング)が、気づかないうちに
+            // 止まったままになっていないかを見張る安全装置。通信の一時的な不調などで
+            // 止まってしまった場合の保険として、定期的に生存確認をして必要なら繋ぎ直す。
+            setInterval(() => {
+                if (!collabProjectId) return;
+                if (!collabCursorChannel || collabCursorChannel.state !== 'joined') {
+                    joinCollabCursorChannel(collabProjectId);
+                }
+                // 直近25秒以内にポーリングが実行された形跡が無ければ、タイマー自体が
+                // 止まっていると判断し、作り直す
+                if (Date.now() - lastPollAttemptAt > 25 * 1000) {
+                    if (collabPollTimer) clearInterval(collabPollTimer);
+                    collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
+                    pollCloudForUpdates(); // すぐに1回試す
+                }
+            }, 30 * 1000);
         });
 
         buildCategoryGrid();
