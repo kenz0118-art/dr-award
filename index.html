@@ -3910,6 +3910,7 @@
             }
         } catch (e) { console.error('Supabase init failed:', e); }
 
+        const COLLAB_CURSOR_ENABLED = false; // 相手のカーソル表示機能。通信量を減らしデータ同期を優先するためOFF
         let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
         let collabPollTimer = null;   // クラウドの変更を定期的に確認するタイマー
         let lastCloudSavedAt = null;  // 直近でクラウドに反映した時刻（自分の変更との区別用）
@@ -3994,6 +3995,7 @@
         }
 
         function joinCollabCursorChannel(projectId) {
+            if (!COLLAB_CURSOR_ENABLED) return;
             if (!supabaseClient) return;
             if (!myCollabName) myCollabName = (prompt('共同編集での、あなたの表示名を入力してください（相手のカーソルの隣にこの名前が表示されます）', '担当者') || '担当者').slice(0, 12);
             if (!myCollabColor) myCollabColor = pickCollabColor();
@@ -4048,12 +4050,13 @@
 
         // 画面全体のマウス移動を監視し、共同編集中だけ間引きながら配信する
         document.addEventListener('mousemove', (e) => {
+            if (!COLLAB_CURSOR_ENABLED) return;
             if (!collabProjectId) return;
             broadcastMyCursor(e.clientX, e.clientY);
         });
         // ===== ここまで：カーソル共有の仕組み =====
 
-        const COLLAB_POLL_INTERVAL_MS = 3 * 1000; // 3秒おきに相手の変更がないか確認
+        const COLLAB_POLL_INTERVAL_MS = 2 * 1000; // 2秒おきに相手の変更がないか確認
 
         function updateCollabStatusUI() {
             const btn = document.getElementById('btn-collab-toggle');
@@ -4878,21 +4881,21 @@
                 }
             }, 90 * 1000);
 
-            // 共同編集中は、90秒より短い間隔（3秒おき）で自分の変更をクラウドに反映する。
+            // 共同編集中は、90秒より短い間隔（2秒おき）で自分の変更をクラウドに反映する。
             // ローカルの下書き保存より頻度を上げることで、相手との「動きのリンク」感が出やすくなる。
             setInterval(() => {
                 const mainApp = document.getElementById('main-app');
                 if (mainApp && !mainApp.classList.contains('hidden') && isModified && collabProjectId) {
                     pushCollabChanges();
                 }
-            }, 3 * 1000);
+            }, 2 * 1000);
 
             // カーソル共有の接続、および実際のデータ同期(ポーリング)が、気づかないうちに
             // 止まったままになっていないかを見張る安全装置。通信の一時的な不調などで
             // 止まってしまった場合の保険として、定期的に生存確認をして必要なら繋ぎ直す。
             setInterval(() => {
                 if (!collabProjectId) return;
-                if (!collabCursorChannel || collabCursorChannel.state !== 'joined') {
+                if (COLLAB_CURSOR_ENABLED && (!collabCursorChannel || collabCursorChannel.state !== 'joined')) {
                     joinCollabCursorChannel(collabProjectId);
                 }
                 // 直近25秒以内にポーリングが実行された形跡が無ければ、タイマー自体が
