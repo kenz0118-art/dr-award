@@ -4051,7 +4051,7 @@
         });
         // ===== ここまで：カーソル共有の仕組み =====
 
-        const COLLAB_POLL_INTERVAL_MS = 20 * 1000; // 20秒おきに相手の変更がないか確認
+        const COLLAB_POLL_INTERVAL_MS = 3 * 1000; // 3秒おきに相手の変更がないか確認
 
         function updateCollabStatusUI() {
             const btn = document.getElementById('btn-collab-toggle');
@@ -4876,14 +4876,14 @@
                 }
             }, 90 * 1000);
 
-            // 共同編集中は、90秒より短い間隔（15秒おき）で自分の変更をクラウドに反映する。
+            // 共同編集中は、90秒より短い間隔（3秒おき）で自分の変更をクラウドに反映する。
             // ローカルの下書き保存より頻度を上げることで、相手との「動きのリンク」感が出やすくなる。
             setInterval(() => {
                 const mainApp = document.getElementById('main-app');
                 if (mainApp && !mainApp.classList.contains('hidden') && isModified && collabProjectId) {
                     pushCollabChanges();
                 }
-            }, 15 * 1000);
+            }, 3 * 1000);
 
             // カーソル共有の接続、および実際のデータ同期(ポーリング)が、気づかないうちに
             // 止まったままになっていないかを見張る安全装置。通信の一時的な不調などで
