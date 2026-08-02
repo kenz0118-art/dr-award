@@ -1061,6 +1061,8 @@
             uploadBtn.classList.add('hidden');
             imgContainer.style.border = 'none';
 
+            uploadAndSwapImageSrc(displayImg); // ステップ1：Base64ならここで裏送りしてURLに差し替える
+
             if (numDisplay && frame.getAttribute('data-has-marker') === 'true') {
                 numDisplay.classList.remove('hidden');
             }
@@ -2607,6 +2609,7 @@
                     imgElement.src = dataUrl; 
                     imgElement.classList.remove('hidden'); 
                     imgElement.style.transform = 'none';
+                    uploadAndSwapImageSrc(imgElement); // ステップ1：Base64ならここで裏送りしてURLに差し替える
                 }
                 if (guide) guide.classList.add('hidden'); 
                 state.floorplanTransform[target] = { x: 0, y: 0, scale: 1 }; 
@@ -2969,6 +2972,7 @@
             });
 
             document.getElementById(`frames-${suffix}`).appendChild(frame);
+            uploadAndSwapImageSrc(frame.querySelector('img')); // ステップ1：Base64ならここで裏送りしてURLに差し替える
             focusFrame(frame);
             checkMenuPlacement(frame);
             return frame;
@@ -3251,7 +3255,7 @@
             
             const imgContainer = document.createElement('div'); imgContainer.className = 'frame-image-container';
             const uploadBtn = document.createElement('button'); uploadBtn.className = 'frame-upload-btn text-xs text-neutral-400 hover:text-neutral-600 transition flex flex-col items-center gap-1 font-medium'; uploadBtn.innerHTML = '<i class="fa-solid fa-image text-lg text-neutral-300"></i>写真を選択'; uploadBtn.onclick = (e) => { e.stopPropagation(); openCategoryModal(frameId); };
-            const displayImg = document.createElement('img'); displayImg.className = 'w-full h-full object-cover hidden'; if(src) { displayImg.src = src; displayImg.classList.remove('hidden'); uploadBtn.classList.add('hidden'); imgContainer.style.border = 'none'; }
+            const displayImg = document.createElement('img'); displayImg.className = 'w-full h-full object-cover hidden'; if(src) { displayImg.src = src; displayImg.classList.remove('hidden'); uploadBtn.classList.add('hidden'); imgContainer.style.border = 'none'; uploadAndSwapImageSrc(displayImg); }
             imgContainer.appendChild(uploadBtn); imgContainer.appendChild(displayImg);
             
             const numDisplay = document.createElement('span'); numDisplay.className = 'marker-number-display no-print absolute top-2 left-2 bg-black/70 text-amber-400 text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm z-30 pointer-events-none hidden'; numDisplay.textContent = '1'; frame.appendChild(numDisplay);
@@ -3927,6 +3931,51 @@
                 supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             }
         } catch (e) { console.error('Supabase init failed:', e); }
+
+        // ===== ステップ1：写真の実体をSupabase Storageに置き、プロジェクトJSONにはURLだけを持たせる =====
+        // これまでは写真をBase64のままプロジェクトJSONに埋め込んでいたため、1回の同期通信が
+        // 数MBにもなっていた。ここからは「フレームにBase64画像がセットされた瞬間」を捕まえて、
+        // 裏でこっそりStorageにアップロードし、アップロードが終わったら<img>のsrcを軽量な
+        // URL文字列に差し替える（画面には最初からBase64でプレビュー表示されるので、体感の速さは変わらない）。
+        //
+        // ★事前準備（Supabaseダッシュボード側で1回だけ必要）★
+        // 1. Storage → New bucket → 名前を「project-photos」、Public bucketをON で作成
+        // 2. （Public bucketなら通常は追加設定不要。もしアップロードが失敗する場合は、
+        //     Storage → Policies で project-photos バケットに対して
+        //     anonロールの INSERT / SELECT / UPDATE を許可するポリシーを追加する）
+        const IMAGE_STORAGE_BUCKET = 'project-photos';
+
+        // dataURL(Base64)をStorageにアップロードし、公開URLを返す。既にURLの場合はnullを返して何もしない。
+        async function uploadImageToStorage(dataUrl) {
+            if (!supabaseClient) return null;
+            if (!dataUrl || !dataUrl.startsWith('data:')) return null; // 既にURL（アップロード済み）なので何もしない
+            try {
+                const res = await fetch(dataUrl);
+                const blob = await res.blob();
+                const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+                const path = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+                const { error } = await supabaseClient.storage.from(IMAGE_STORAGE_BUCKET).upload(path, blob, { contentType: blob.type, upsert: true });
+                if (error) throw error;
+                const { data: pub } = supabaseClient.storage.from(IMAGE_STORAGE_BUCKET).getPublicUrl(path);
+                return (pub && pub.publicUrl) ? pub.publicUrl : null;
+            } catch (e) {
+                console.error('画像のStorageアップロードに失敗（Base64のまま使用を継続）:', e);
+                return null;
+            }
+        }
+
+        // 指定した<img>要素の画像がBase64のままなら、裏でアップロードしてsrcを軽量なURLに差し替える。
+        // 差し替え前に別の画像に変わっていた場合（連続で写真を差し替えた等）は上書きしない。
+        function uploadAndSwapImageSrc(imgEl) {
+            if (!imgEl || !imgEl.src || !imgEl.src.startsWith('data:')) return;
+            const localSrc = imgEl.src;
+            uploadImageToStorage(localSrc).then((url) => {
+                if (url && imgEl.src === localSrc) {
+                    imgEl.src = url;
+                    isModified = true;
+                }
+            });
+        }
 
         const COLLAB_CURSOR_ENABLED = false; // 相手のカーソル表示機能。通信量を減らしデータ同期を優先するためOFF
         let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
