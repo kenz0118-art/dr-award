@@ -3998,8 +3998,10 @@
             if (!myCollabName) myCollabName = (prompt('共同編集での、あなたの表示名を入力してください（相手のカーソルの隣にこの名前が表示されます）', '担当者') || '担当者').slice(0, 12);
             if (!myCollabColor) myCollabColor = pickCollabColor();
 
+            // 通信が一瞬途切れて再接続するだけの場合にも毎回カーソルを消してしまうと
+            // 「出たり消えたり」してチラつくため、ここでは消さない。
+            // （本当に別プロジェクトへ切り替える場合はleaveCollabCursorChannel経由で消える）
             if (collabCursorChannel) { supabaseClient.removeChannel(collabCursorChannel); collabCursorChannel = null; }
-            clearAllRemoteCursors();
 
             collabCursorChannel = supabaseClient.channel(`cursor-${projectId}`, { config: { presence: { key: myCollabClientId } } });
             collabCursorChannel
