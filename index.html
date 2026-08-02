@@ -1016,6 +1016,14 @@
         
         // --- 図面ドラッグ・ズーム用の状態管理変数 ---
         let isDraggingFloorplan = false;
+        // 写真のドラッグ・リサイズ・回転など、何かをポインターで掴んで操作している間は
+        // クラウドから届いたデータを取り込まないようにするためのフラグ（操作中に相手の
+        // 更新で位置が一瞬戻ってしまうのを防ぐ）。ボタンやスクロール操作は対象外にしたいので、
+        // 各要素側のpointerdown（キャプチャフェーズ）だけを見る。
+        let isUserPointerInteracting = false;
+        document.addEventListener('pointerdown', () => { isUserPointerInteracting = true; }, true);
+        document.addEventListener('pointerup', () => { isUserPointerInteracting = false; }, true);
+        document.addEventListener('pointercancel', () => { isUserPointerInteracting = false; }, true);
         let dragFloorplanTarget = null;
         let floorplanStartX = 0, floorplanStartY = 0;
         let floorplanOrigX = 0, floorplanOrigY = 0;
@@ -3912,6 +3920,7 @@
 
         const COLLAB_CURSOR_ENABLED = false; // 相手のカーソル表示機能。通信量を減らしデータ同期を優先するためOFF
         let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
+        const LAST_COLLAB_ID_STORAGE_KEY = 'draward_last_collab_project_id'; // 「前回参加していた共有ID」をこの端末に覚えておくためのキー
         let collabPollTimer = null;   // クラウドの変更を定期的に確認するタイマー
         let lastCloudSavedAt = null;  // 直近でクラウドに反映した時刻（自分の変更との区別用）
 
@@ -4131,6 +4140,7 @@
             if (collabPollTimer) clearInterval(collabPollTimer);
             collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
             joinCollabCursorChannel(projectId);
+            try { localStorage.setItem(LAST_COLLAB_ID_STORAGE_KEY, projectId); } catch (e) { console.error(e); }
         }
 
         function stopCollabSync() {
@@ -4139,6 +4149,7 @@
             if (collabPollTimer) { clearInterval(collabPollTimer); collabPollTimer = null; }
             leaveCollabCursorChannel();
             updateCollabStatusUI();
+            try { localStorage.removeItem(LAST_COLLAB_ID_STORAGE_KEY); } catch (e) { console.error(e); }
         }
 
         // 自分の変更をクラウドに反映する（90秒おきの自動保存タイマーから呼ばれる）
@@ -4174,6 +4185,12 @@
                 if (error) { console.error('pollCloudForUpdates error:', error); showAutosaveStatus('相手の変更の確認に失敗しました', true); return; }
                 if (!row) return;
                 if (row.created_at && row.created_at !== lastCloudSavedAt) {
+                    if (isUserPointerInteracting) {
+                        // 今まさに写真をドラッグ/リサイズ/回転などで操作中。ここで取り込むと
+                        // 操作中の位置が一瞬戻って見えてしまうので、今回は見送り、
+                        // 操作が終わった後の次回ポーリングで改めて取り込む。
+                        return;
+                    }
                     isApplyingHistory = true;
                     applyProjectData(row.data);
                     isApplyingHistory = false;
@@ -4866,6 +4883,17 @@
                     // 再読み込みのたびに自動参加し直さないよう、URLからパラメータを消しておく
                     history.replaceState(null, '', location.pathname);
                 }, 700);
+            } else {
+                // URLに共有IDが無くても、以前この端末で共同編集に参加したことがあれば、
+                // 同じ共有IDに自動で再接続する（毎回リンクを送り直さなくても、
+                // 一度参加すればそのままこのURLだけで続けられるようにするため）。
+                // 「共同編集を終了する」を選ぶとこの記録は消え、この自動再接続も行われなくなる。
+                let lastCollabId = null;
+                try { lastCollabId = localStorage.getItem(LAST_COLLAB_ID_STORAGE_KEY); } catch (e) { console.error(e); }
+                if (lastCollabId) {
+                    startNewApp();
+                    setTimeout(() => { startCollabSync(lastCollabId, false); }, 700);
+                }
             }
 
             // 全画面での意図しないドロップ（画像がブラウザ全体で開いてしまう現象）を防止
