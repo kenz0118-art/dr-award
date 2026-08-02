@@ -1024,6 +1024,16 @@
         document.addEventListener('pointerdown', () => { isUserPointerInteracting = true; }, true);
         document.addEventListener('pointerup', () => { isUserPointerInteracting = false; }, true);
         document.addEventListener('pointercancel', () => { isUserPointerInteracting = false; }, true);
+        // コメント枠・お施主様名などのテキスト欄に文字を打っている間も、同期の取り込みで
+        // 枠ごと作り直されると入力中の文字が消えたりカーソルが飛んだりするため、
+        // フォーカスが当たっている間は取り込みを一時停止する。
+        let isUserTextEditing = false;
+        document.addEventListener('focusin', (e) => {
+            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) isUserTextEditing = true;
+        }, true);
+        document.addEventListener('focusout', (e) => {
+            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) isUserTextEditing = false;
+        }, true);
         let dragFloorplanTarget = null;
         let floorplanStartX = 0, floorplanStartY = 0;
         let floorplanOrigX = 0, floorplanOrigY = 0;
@@ -4185,10 +4195,11 @@
                 if (error) { console.error('pollCloudForUpdates error:', error); showAutosaveStatus('相手の変更の確認に失敗しました', true); return; }
                 if (!row) return;
                 if (row.created_at && row.created_at !== lastCloudSavedAt) {
-                    if (isUserPointerInteracting) {
-                        // 今まさに写真をドラッグ/リサイズ/回転などで操作中。ここで取り込むと
-                        // 操作中の位置が一瞬戻って見えてしまうので、今回は見送り、
-                        // 操作が終わった後の次回ポーリングで改めて取り込む。
+                    if (isUserPointerInteracting || isUserTextEditing) {
+                        // 今まさに写真をドラッグ/リサイズ/回転などで操作中、または
+                        // コメント欄などに文字を入力中。ここで取り込むと操作中の位置が
+                        // 一瞬戻ったり、入力中の文字が消えたりしてしまうので、今回は見送り、
+                        // 操作・入力が終わった後の次回ポーリングで改めて取り込む。
                         return;
                     }
                     isApplyingHistory = true;
