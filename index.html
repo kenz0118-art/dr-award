@@ -1021,9 +1021,19 @@
         // 更新で位置が一瞬戻ってしまうのを防ぐ）。ボタンやスクロール操作は対象外にしたいので、
         // 各要素側のpointerdown（キャプチャフェーズ）だけを見る。
         let isUserPointerInteracting = false;
-        document.addEventListener('pointerdown', () => { isUserPointerInteracting = true; }, true);
-        document.addEventListener('pointerup', () => { isUserPointerInteracting = false; }, true);
-        document.addEventListener('pointercancel', () => { isUserPointerInteracting = false; }, true);
+        let pointerInteractingSafetyTimer = null;
+        document.addEventListener('pointerdown', () => {
+            isUserPointerInteracting = true;
+            // マウスを押したままブラウザの外に切り替える等でpointerupが取れなかった場合の保険。
+            // 8秒経ってもpointerupが来なければ、操作は終わったものとみなして強制的に解除する。
+            clearTimeout(pointerInteractingSafetyTimer);
+            pointerInteractingSafetyTimer = setTimeout(() => { isUserPointerInteracting = false; }, 8000);
+        }, true);
+        document.addEventListener('pointerup', () => { isUserPointerInteracting = false; clearTimeout(pointerInteractingSafetyTimer); }, true);
+        document.addEventListener('pointercancel', () => { isUserPointerInteracting = false; clearTimeout(pointerInteractingSafetyTimer); }, true);
+        // マウスを押したまま別ウィンドウ（スクリーンショットツール等）に切り替わった場合の保険。
+        // ウィンドウがフォーカスを失ったら、その時点で操作は終わったものとみなす。
+        window.addEventListener('blur', () => { isUserPointerInteracting = false; clearTimeout(pointerInteractingSafetyTimer); });
         // コメント枠・お施主様名などのテキスト欄に文字を打っている間も、同期の取り込みで
         // 枠ごと作り直されると入力中の文字が消えたりカーソルが飛んだりするため、
         // フォーカスが当たっている間は取り込みを一時停止する。
@@ -4983,6 +4993,12 @@
             // 止まってしまった場合の保険として、定期的に生存確認をして必要なら繋ぎ直す。
             setInterval(() => {
                 if (!collabProjectId) return;
+                // 「入力中」フラグが、実際にはテキスト欄にフォーカスが無いのに立ちっぱなしに
+                // なっていないかの保険（何らかの理由でfocusoutが取得できなかった場合の対策）
+                const activeTag = document.activeElement ? document.activeElement.tagName : '';
+                if (isUserTextEditing && activeTag !== 'TEXTAREA' && activeTag !== 'INPUT') {
+                    isUserTextEditing = false;
+                }
                 if (COLLAB_CURSOR_ENABLED && (!collabCursorChannel || collabCursorChannel.state !== 'joined')) {
                     joinCollabCursorChannel(collabProjectId);
                 }
