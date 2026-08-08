@@ -4213,8 +4213,18 @@
                         alert('その共有IDのプロジェクトが見つかりませんでした。IDを確認してもう一度お試しください。');
                         return;
                     }
+                    // project_elements（ステップ2の要素単位テーブル）に既にこのプロジェクトのデータが
+                    // あるなら、写真等のフレームはそちらが正なので、projectsテーブル内に化石化して
+                    // 残っているかもしれない古いframesスナップショットは絶対に使わない
+                    // （使うと、消したはずの古い写真が再接続のたびに復活してしまう）。
+                    let hasElementData = false;
+                    try {
+                        const { data: existingElements } = await supabaseClient.from(ELEMENT_STORAGE_TABLE).select('id').eq('project_id', projectId).limit(1);
+                        hasElementData = !!(existingElements && existingElements.length > 0);
+                    } catch (e) { console.error('要素データの有無確認に失敗:', e); }
+
                     isApplyingHistory = true;
-                    applyProjectData(row.data);
+                    applyProjectData(row.data, hasElementData); // 要素データが既にあるならframesは触らない
                     isApplyingHistory = false;
                     lastCloudSavedAt = row.created_at;
                     collabProjectId = projectId;
