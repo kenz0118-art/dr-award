@@ -4367,6 +4367,11 @@
             if (!supabaseClient || !collabProjectId) return;
             const rows = [];
             const currentIds = new Set();
+            // このtickで実際に送った「DOMから作った文字列」を覚えておく。
+            // サーバーへ行って戻ってきたJSONB（jsonb化でキーの並び順が変わりうる）を
+            // そのまま比較に使うと、中身が同じでも「違う」と誤判定して延々と
+            // 送信し続けてしまうため、比較の基準は常にこちら側で作った文字列に統一する。
+            const localJsonById = new Map();
 
             FRAME_FLOOR_SUFFIXES.forEach(suffix => {
                 const container = document.getElementById(`frames-${suffix}`);
@@ -4382,6 +4387,7 @@
                     const prev = elementSyncState.get(id);
                     if (!prev || prev.json !== json) {
                         rows.push({ id: `${collabProjectId}::${id}`, project_id: collabProjectId, element_id: id, floor: suffix, data, deleted: false, updated_at: new Date().toISOString() });
+                        localJsonById.set(id, json);
                     }
                 });
             });
@@ -4398,8 +4404,9 @@
                 const { data: upserted, error } = await supabaseClient.from(ELEMENT_STORAGE_TABLE).upsert(rows, { onConflict: 'id' }).select();
                 if (error) { console.error('要素の同期(送信)に失敗:', error); return; }
                 (upserted || rows).forEach(row => {
-                    elementSyncState.set(row.element_id, {
-                        json: row.deleted ? null : JSON.stringify(row.data),
+                    const id = row.element_id;
+                    elementSyncState.set(id, {
+                        json: row.deleted ? null : (localJsonById.get(id) ?? JSON.stringify(row.data)),
                         updatedAt: row.updated_at,
                         floor: row.floor,
                         deletedPushed: !!row.deleted
@@ -4441,7 +4448,12 @@
                     isApplyingHistory = false;
                     renumberMarkers(suffix.toUpperCase());
 
-                    elementSyncState.set(id, { json: JSON.stringify(row.data), updatedAt: row.updated_at, floor: suffix });
+                    // 比較の基準を常に「DOMから作った文字列」に統一するため、
+                    // 受け取ったrow.dataそのものではなく、今作り直したDOMを
+                    // 改めてserializeFrameElementした結果を覚えておく。
+                    const newEl = document.querySelector(`#frames-${suffix} .photo-frame[data-id="${id}"]`);
+                    const canonicalJson = newEl ? JSON.stringify(serializeFrameElement(newEl, suffix)) : JSON.stringify(row.data);
+                    elementSyncState.set(id, { json: canonicalJson, updatedAt: row.updated_at, floor: suffix });
                 });
             } catch (e) { console.error('要素の同期(取得)に失敗:', e); }
         }
