@@ -1035,7 +1035,7 @@
         let pointerInteractingSafetyTimer = null;
         document.addEventListener('pointerdown', (e) => {
             isUserPointerInteracting = true;
-            const frameEl = e.target && e.target.closest ? e.target.closest('.photo-frame') : null;
+            const frameEl = e.target && e.target.closest ? (e.target.closest('.photo-frame') || e.target.closest('.camera-marker')) : null;
             activeInteractingElementId = frameEl ? frameEl.getAttribute('data-id') : null;
             // マウスを押したままブラウザの外に切り替える等でpointerupが取れなかった場合の保険。
             // 8秒経ってもpointerupが来なければ、操作は終わったものとみなして強制的に解除する。
@@ -4231,7 +4231,7 @@
             collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
             elementSyncState = new Map(); // 前回参加時の状態が残らないよう、要素の同期状況をリセット
             if (collabElementSyncTimer) clearInterval(collabElementSyncTimer);
-            collabElementSyncTimer = setInterval(() => { pushElementChanges(); pollElementChanges(); }, COLLAB_POLL_INTERVAL_MS);
+            collabElementSyncTimer = setInterval(async () => { await pushElementChanges(); await pollElementChanges(); }, COLLAB_POLL_INTERVAL_MS);
             joinCollabCursorChannel(projectId);
             try { localStorage.setItem(LAST_COLLAB_ID_STORAGE_KEY, projectId); } catch (e) { console.error(e); }
         }
@@ -5174,7 +5174,7 @@
                     collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
                     pollCloudForUpdates(); // すぐに1回試す
                     if (collabElementSyncTimer) clearInterval(collabElementSyncTimer);
-                    collabElementSyncTimer = setInterval(() => { pushElementChanges(); pollElementChanges(); }, COLLAB_POLL_INTERVAL_MS);
+                    collabElementSyncTimer = setInterval(async () => { await pushElementChanges(); await pollElementChanges(); }, COLLAB_POLL_INTERVAL_MS);
                 }
             }, 30 * 1000);
         });
