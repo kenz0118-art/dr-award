@@ -4025,7 +4025,7 @@
         const remoteCursors = {};  // { clientId: { el, name, color, floor } } 相手ごとのカーソル要素を保持
         const COLLAB_CURSOR_COLORS = ['#e07a5f', '#3d8bfd', '#43aa8b', '#f2b134', '#9b5de5', '#00b4d8'];
         let lastCursorBroadcastAt = 0;
-        const CURSOR_BROADCAST_INTERVAL_MS = 120; // カーソル位置を送る頻度（送りすぎ防止のための間引き）
+        const CURSOR_BROADCAST_INTERVAL_MS = 50; // カーソル位置を送る頻度（なめらかさ優先。以前は120msで動きがガタついていた）
 
         function pickCollabColor() {
             return COLLAB_CURSOR_COLORS[Math.floor(Math.random() * COLLAB_CURSOR_COLORS.length)];
@@ -4048,7 +4048,7 @@
                 if (entry) entry.el.remove();
                 const el = document.createElement('div');
                 el.className = 'no-print';
-                el.style.cssText = 'position:absolute; z-index:9999; pointer-events:none; transition: left 0.08s linear, top 0.08s linear;';
+                el.style.cssText = 'position:absolute; z-index:9999; pointer-events:none; transition: left 0.15s ease-out, top 0.15s ease-out;';
                 el.innerHTML = `
                     <svg width="18" height="24" viewBox="0 0 18 24" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.35));">
                         <path d="M1 1 L1 18 L6 14 L9 21 L12 19.5 L9 13 L16 13 Z" fill="${color}" stroke="white" stroke-width="1"/>
