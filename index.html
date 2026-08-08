@@ -4007,7 +4007,7 @@
             });
         }
 
-        const COLLAB_CURSOR_ENABLED = false; // 相手のカーソル表示機能。通信量を減らしデータ同期を優先するためOFF
+        const COLLAB_CURSOR_ENABLED = true; // 相手のカーソル表示機能。ステップ1で通信量問題が解消されたため再度ON
         let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
         const LAST_COLLAB_ID_STORAGE_KEY = 'draward_last_collab_project_id'; // 「前回参加していた共有ID」をこの端末に覚えておくためのキー
         let collabPollTimer = null;   // クラウドの変更を定期的に確認するタイマー（ステップ3以降はRealtimeが繋がっていれば保険としてのみ動く）
