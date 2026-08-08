@@ -1015,34 +1015,54 @@
         let isModified = false;
         
         // --- 図面ドラッグ・ズーム用の状態管理変数 ---
+        // 背景画像などのsrcが「実際に画像が設定されている」状態かどうかを判定する。
+        // ステップ1でBase64だけでなくStorageのURL（https://...）も使うようになったため、
+        // 両方を「有効な画像」として扱う（空文字列やundefinedは「未設定」として扱う）。
+        function isValidImageSrc(src) {
+            return !!src && (src.startsWith('data:image') || src.startsWith('http://') || src.startsWith('https://'));
+        }
+
         let isDraggingFloorplan = false;
         // 写真のドラッグ・リサイズ・回転など、何かをポインターで掴んで操作している間は
         // クラウドから届いたデータを取り込まないようにするためのフラグ（操作中に相手の
         // 更新で位置が一瞬戻ってしまうのを防ぐ）。ボタンやスクロール操作は対象外にしたいので、
         // 各要素側のpointerdown（キャプチャフェーズ）だけを見る。
         let isUserPointerInteracting = false;
+        // ステップ2：今まさに操作 or 入力の対象になっている「要素のID」。
+        // 要素単位の同期では、この要素だけを取り込み対象から外せば済むため、
+        // 他の人が別の写真やコメント枠を触っていても、それはブロックせずに反映できる。
+        let activeInteractingElementId = null;
         let pointerInteractingSafetyTimer = null;
-        document.addEventListener('pointerdown', () => {
+        document.addEventListener('pointerdown', (e) => {
             isUserPointerInteracting = true;
+            const frameEl = e.target && e.target.closest ? e.target.closest('.photo-frame') : null;
+            activeInteractingElementId = frameEl ? frameEl.getAttribute('data-id') : null;
             // マウスを押したままブラウザの外に切り替える等でpointerupが取れなかった場合の保険。
             // 8秒経ってもpointerupが来なければ、操作は終わったものとみなして強制的に解除する。
             clearTimeout(pointerInteractingSafetyTimer);
-            pointerInteractingSafetyTimer = setTimeout(() => { isUserPointerInteracting = false; }, 8000);
+            pointerInteractingSafetyTimer = setTimeout(() => { isUserPointerInteracting = false; activeInteractingElementId = null; }, 8000);
         }, true);
-        document.addEventListener('pointerup', () => { isUserPointerInteracting = false; clearTimeout(pointerInteractingSafetyTimer); }, true);
-        document.addEventListener('pointercancel', () => { isUserPointerInteracting = false; clearTimeout(pointerInteractingSafetyTimer); }, true);
+        document.addEventListener('pointerup', () => { isUserPointerInteracting = false; activeInteractingElementId = null; clearTimeout(pointerInteractingSafetyTimer); }, true);
+        document.addEventListener('pointercancel', () => { isUserPointerInteracting = false; activeInteractingElementId = null; clearTimeout(pointerInteractingSafetyTimer); }, true);
         // マウスを押したまま別ウィンドウ（スクリーンショットツール等）に切り替わった場合の保険。
         // ウィンドウがフォーカスを失ったら、その時点で操作は終わったものとみなす。
-        window.addEventListener('blur', () => { isUserPointerInteracting = false; clearTimeout(pointerInteractingSafetyTimer); });
+        window.addEventListener('blur', () => { isUserPointerInteracting = false; activeInteractingElementId = null; clearTimeout(pointerInteractingSafetyTimer); });
         // コメント枠・お施主様名などのテキスト欄に文字を打っている間も、同期の取り込みで
         // 枠ごと作り直されると入力中の文字が消えたりカーソルが飛んだりするため、
         // フォーカスが当たっている間は取り込みを一時停止する。
         let isUserTextEditing = false;
         document.addEventListener('focusin', (e) => {
-            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) isUserTextEditing = true;
+            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+                isUserTextEditing = true;
+                const frameEl = e.target.closest ? e.target.closest('.photo-frame') : null;
+                if (frameEl) activeInteractingElementId = frameEl.getAttribute('data-id');
+            }
         }, true);
         document.addEventListener('focusout', (e) => {
-            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) isUserTextEditing = false;
+            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+                isUserTextEditing = false;
+                activeInteractingElementId = null;
+            }
         }, true);
         let dragFloorplanTarget = null;
         let floorplanStartX = 0, floorplanStartY = 0;
@@ -1409,20 +1429,20 @@
                     const imgStr1 = canvasState['floorplanboth1'];
                     const imgElement1 = document.getElementById('floorplan-img-both1');
                     const guide1 = document.querySelector('.guide-text-both1');
-                    if (imgStr1 && imgStr1.startsWith('data:image')) { imgElement1.src = imgStr1; imgElement1.classList.remove('hidden'); if(guide1) guide1.classList.add('hidden'); const t = state.floorplanTransform['both1'] || { x: 0, y: 0, scale: 1 }; imgElement1.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
+                    if (imgStr1 && isValidImageSrc(imgStr1)) { imgElement1.src = imgStr1; imgElement1.classList.remove('hidden'); if(guide1) guide1.classList.add('hidden'); const t = state.floorplanTransform['both1'] || { x: 0, y: 0, scale: 1 }; imgElement1.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
                     else { imgElement1.src = ''; imgElement1.classList.add('hidden'); if(guide1) guide1.classList.remove('hidden'); imgElement1.style.transform = 'none'; }
 
                     const imgStr2 = canvasState['floorplanboth2'];
                     const imgElement2 = document.getElementById('floorplan-img-both2');
                     const guide2 = document.querySelector('.guide-text-both2');
-                    if (imgStr2 && imgStr2.startsWith('data:image')) { imgElement2.src = imgStr2; imgElement2.classList.remove('hidden'); if(guide2) guide2.classList.add('hidden'); const t = state.floorplanTransform['both2'] || { x: 0, y: 0, scale: 1 }; imgElement2.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
+                    if (imgStr2 && isValidImageSrc(imgStr2)) { imgElement2.src = imgStr2; imgElement2.classList.remove('hidden'); if(guide2) guide2.classList.add('hidden'); const t = state.floorplanTransform['both2'] || { x: 0, y: 0, scale: 1 }; imgElement2.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
                     else { imgElement2.src = ''; imgElement2.classList.add('hidden'); if(guide2) guide2.classList.remove('hidden'); imgElement2.style.transform = 'none'; }
                 } else {
                     const imgStr = canvasState[`floorplan${suffix}`];
                     const imgElement = document.getElementById(`floorplan-img-${suffix}`);
                     const workspace = document.getElementById(`workspace-${suffix}`);
                     let guide = workspace ? workspace.querySelector('.guide-text') : null;
-                    if (imgStr && imgStr.startsWith('data:image')) { imgElement.src = imgStr; imgElement.classList.remove('hidden'); if(guide) guide.classList.add('hidden'); const t = state.floorplanTransform[suffix] || { x: 0, y: 0, scale: 1 }; imgElement.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
+                    if (imgStr && isValidImageSrc(imgStr)) { imgElement.src = imgStr; imgElement.classList.remove('hidden'); if(guide) guide.classList.add('hidden'); const t = state.floorplanTransform[suffix] || { x: 0, y: 0, scale: 1 }; imgElement.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
                     else { imgElement.src = ''; imgElement.classList.add('hidden'); if(guide) guide.classList.remove('hidden'); imgElement.style.transform = 'none'; }
                 }
                 (canvasState[`frames${suffix}`] || []).forEach(fData => {
@@ -3991,6 +4011,7 @@
         let collabProjectId = null;   // 現在共同編集中の共有ID（未使用時はnull）
         const LAST_COLLAB_ID_STORAGE_KEY = 'draward_last_collab_project_id'; // 「前回参加していた共有ID」をこの端末に覚えておくためのキー
         let collabPollTimer = null;   // クラウドの変更を定期的に確認するタイマー
+        let collabElementSyncTimer = null; // ステップ2：写真・コメント枠などを要素単位で同期するタイマー
         let lastCloudSavedAt = null;  // 直近でクラウドに反映した時刻（自分の変更との区別用）
 
         // ===== ここから：相手のカーソルをリアルタイム表示するための仕組み =====
@@ -4208,6 +4229,9 @@
             }
             if (collabPollTimer) clearInterval(collabPollTimer);
             collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
+            elementSyncState = new Map(); // 前回参加時の状態が残らないよう、要素の同期状況をリセット
+            if (collabElementSyncTimer) clearInterval(collabElementSyncTimer);
+            collabElementSyncTimer = setInterval(() => { pushElementChanges(); pollElementChanges(); }, COLLAB_POLL_INTERVAL_MS);
             joinCollabCursorChannel(projectId);
             try { localStorage.setItem(LAST_COLLAB_ID_STORAGE_KEY, projectId); } catch (e) { console.error(e); }
         }
@@ -4216,6 +4240,8 @@
             collabProjectId = null;
             lastCloudSavedAt = null;
             if (collabPollTimer) { clearInterval(collabPollTimer); collabPollTimer = null; }
+            if (collabElementSyncTimer) { clearInterval(collabElementSyncTimer); collabElementSyncTimer = null; }
+            elementSyncState = new Map();
             leaveCollabCursorChannel();
             updateCollabStatusUI();
             try { localStorage.removeItem(LAST_COLLAB_ID_STORAGE_KEY); } catch (e) { console.error(e); }
@@ -4262,7 +4288,7 @@
                         return;
                     }
                     isApplyingHistory = true;
-                    applyProjectData(row.data);
+                    applyProjectData(row.data, true); // skipFrames=true: フレームはproject_elements側の同期に任せる
                     isApplyingHistory = false;
                     isModified = false;
                     lastCloudSavedAt = row.created_at;
@@ -4278,10 +4304,136 @@
         // 写真ストック（共有カタログ）は各端末にローカル保存されるもので、本来プロジェクトの
         // レイアウト共有には不要なため、ここでは含めない（これを含めていたことが、自動保存・
         // 自動同期のたびに大量データを送受信しメモリを圧迫していた主な原因だったため除外する）。
+        // ステップ2以降、写真・コメント枠などのフレーム情報はproject_elementsテーブルで
+        // 要素単位に同期するようになったため、ここでも二重に持たないよう除外する
+        // （初回参加時の互換用に、フレーム情報自体はローカルのgetProjectDataにはそのまま残す）。
         function getProjectDataForCollab() {
             const data = getProjectData();
             delete data.categoryImagesMemory;
+            ['1f', '2f', 'both', 'ext'].forEach(suffix => { delete data[`frames${suffix}`]; });
             return data;
+        }
+
+        // ===== ステップ2：写真・コメント枠などを「要素単位」で同期する =====
+        // プロジェクト全体を1つの塊として同期する方式だと、2人が別々の場所を同時に触った時に
+        // どちらか一方の変更が丸ごと上書きされて消えてしまう。ここからは、写真1枚・コメント1個
+        // ごとに別々の行としてクラウドに保存し、「変わった要素だけ」を送受信するようにする。
+        //
+        // ★事前準備（Supabaseダッシュボード側で1回だけ必要）★
+        // SQL Editorで以下を実行してテーブルとポリシーを作成しておくこと:
+        //   create table if not exists project_elements (
+        //     id text primary key, project_id text not null, element_id text not null,
+        //     floor text not null, data jsonb not null default '{}'::jsonb,
+        //     deleted boolean not null default false, updated_at timestamptz not null default now()
+        //   );
+        //   alter table project_elements enable row level security;
+        //   create policy "anon can read project_elements" on project_elements for select to anon using (true);
+        //   create policy "anon can insert project_elements" on project_elements for insert to anon with check (true);
+        //   create policy "anon can update project_elements" on project_elements for update to anon using (true);
+        const ELEMENT_STORAGE_TABLE = 'project_elements';
+        const FRAME_FLOOR_SUFFIXES = ['1f', '2f', 'both', 'ext']; // フレームを置ける4つのページ
+
+        // 要素ごとの同期状況を覚えておくMap。
+        // key: 要素のID(data-id) / value: { json: 最後に送受信した内容, updatedAt: サーバー側の更新時刻, floor: 所属ページ }
+        let elementSyncState = new Map();
+
+        // タイプ名 → 復元関数、の対応表（duplicateFrameやapplyProjectDataと同じ対応関係）
+        function getRestoreFnForType(type) {
+            switch (type) {
+                case 'photo': return restorePhotoFrame;
+                case 'text': return restoreTextFrame;
+                case 'textbox': return restoreTextBoxFrame;
+                case 'stamp': return restoreStampFrame;
+                case 'leader': return restoreLeaderFrame;
+                case 'freehand': return restoreFreehandFrame;
+                case 'floorplan-cutout': return restoreFloorplanCutoutFrame;
+                default: return null;
+            }
+        }
+
+        // 今のDOMにある全フレームを見て、前回と内容が変わっている要素だけをクラウドへ送る。
+        // 消えた要素（削除された）も検出して、削除として送る。
+        async function pushElementChanges() {
+            if (!supabaseClient || !collabProjectId) return;
+            const rows = [];
+            const currentIds = new Set();
+
+            FRAME_FLOOR_SUFFIXES.forEach(suffix => {
+                const container = document.getElementById(`frames-${suffix}`);
+                if (!container) return;
+                container.querySelectorAll('.photo-frame').forEach(f => {
+                    const id = f.getAttribute('data-id');
+                    if (!id) return;
+                    currentIds.add(id);
+                    // 今まさに自分が掴んで操作中・入力中の要素は、確定するまで連投しない
+                    if (id === activeInteractingElementId) return;
+                    const data = serializeFrameElement(f, suffix);
+                    const json = JSON.stringify(data);
+                    const prev = elementSyncState.get(id);
+                    if (!prev || prev.json !== json) {
+                        rows.push({ id: `${collabProjectId}::${id}`, project_id: collabProjectId, element_id: id, floor: suffix, data, deleted: false, updated_at: new Date().toISOString() });
+                    }
+                });
+            });
+
+            // 前回は存在したのに今回のDOMには無い要素 → 削除されたとみなして送る
+            elementSyncState.forEach((info, id) => {
+                if (!currentIds.has(id) && !info.deletedPushed && id !== activeInteractingElementId) {
+                    rows.push({ id: `${collabProjectId}::${id}`, project_id: collabProjectId, element_id: id, floor: info.floor || '1f', data: {}, deleted: true, updated_at: new Date().toISOString() });
+                }
+            });
+
+            if (rows.length === 0) return;
+            try {
+                const { data: upserted, error } = await supabaseClient.from(ELEMENT_STORAGE_TABLE).upsert(rows, { onConflict: 'id' }).select();
+                if (error) { console.error('要素の同期(送信)に失敗:', error); return; }
+                (upserted || rows).forEach(row => {
+                    elementSyncState.set(row.element_id, {
+                        json: row.deleted ? null : JSON.stringify(row.data),
+                        updatedAt: row.updated_at,
+                        floor: row.floor,
+                        deletedPushed: !!row.deleted
+                    });
+                });
+            } catch (e) { console.error('要素の同期(送信)に失敗:', e); }
+        }
+
+        // クラウド上の全要素を取得し、自分がまだ知らない変更（他の人の変更）だけを画面に反映する。
+        async function pollElementChanges() {
+            if (!supabaseClient || !collabProjectId) return;
+            try {
+                const { data: rows, error } = await supabaseClient.from(ELEMENT_STORAGE_TABLE).select('*').eq('project_id', collabProjectId);
+                if (error) { console.error('要素の同期(取得)に失敗:', error); return; }
+                (rows || []).forEach(row => {
+                    const id = row.element_id;
+                    if (id === activeInteractingElementId) return; // 操作中の要素は見送り、次回に回す
+                    const info = elementSyncState.get(id);
+                    if (info && info.updatedAt === row.updated_at) return; // 既に反映済み（自分の送信含む）
+
+                    const suffix = row.floor;
+                    const existing = document.querySelector(`#frames-${suffix} .photo-frame[data-id="${id}"]`);
+
+                    if (row.deleted) {
+                        if (existing) existing.remove();
+                        document.querySelectorAll(`.camera-marker[data-id="${id}"]`).forEach(m => m.remove());
+                        elementSyncState.set(id, { json: null, updatedAt: row.updated_at, floor: suffix, deletedPushed: true });
+                        renumberMarkers(suffix.toUpperCase());
+                        return;
+                    }
+
+                    const restoreFn = getRestoreFnForType(row.data.type);
+                    if (!restoreFn) return;
+
+                    isApplyingHistory = true;
+                    if (existing) existing.remove();
+                    document.querySelectorAll(`.camera-marker[data-id="${id}"]`).forEach(m => m.remove());
+                    restoreFn(suffix, row.data);
+                    isApplyingHistory = false;
+                    renumberMarkers(suffix.toUpperCase());
+
+                    elementSyncState.set(id, { json: JSON.stringify(row.data), updatedAt: row.updated_at, floor: suffix });
+                });
+            } catch (e) { console.error('要素の同期(取得)に失敗:', e); }
         }
 
         function exportProject() {
@@ -4290,7 +4442,14 @@
             const a = document.createElement('a'); a.href = url; a.download = `Presentation_${inputName.value.replace(/\s+/g, '_') || 'project'}.json`; a.click(); URL.revokeObjectURL(url);
         }
 
-        function applyProjectData(project) {
+        // skipFrames=true の場合、写真・コメント枠などのフレーム部分は一切触らない
+        // （ステップ2以降、フレームは project_elements 側の要素単位の同期で管理するため。
+        //   ここで毎回frames部分を再構築すると、せっかく要素単位で取り込んだ内容を
+        //   丸ごと消してしまうことになる）。
+        // co-op目的の定期ポーリングでは true を渡し、プロジェクトファイルの読み込みや
+        // 共同編集への初回参加（まだproject_elementsに何も無い状態からの復元）では
+        // false のままにして、埋め込まれたframesデータからも復元できるようにする。
+        function applyProjectData(project, skipFrames = false) {
             isApplyingHistory = true;
 
             inputName.value = project.clientName || ''; 
@@ -4323,44 +4482,49 @@
             
             ['1f', '2f', 'both', 'ext'].forEach(suffix => {
                 const container = document.getElementById(`frames-${suffix}`); if(!container) return;
-                container.innerHTML = ''; document.querySelectorAll(`#wrapper-${suffix} .camera-marker`).forEach(m => m.remove());
+                if (!skipFrames) {
+                    container.innerHTML = ''; document.querySelectorAll(`#wrapper-${suffix} .camera-marker`).forEach(m => m.remove());
+                }
                 
                 if (suffix === 'both') {
                     const imgStr1 = project['floorplanboth1'];
                     const imgElement1 = document.getElementById('floorplan-img-both1');
                     const guide1 = document.querySelector('.guide-text-both1');
-                    if (imgStr1 && imgStr1.startsWith('data:image')) { imgElement1.src = imgStr1; imgElement1.classList.remove('hidden'); guide1.classList.add('hidden'); const t = state.floorplanTransform['both1'] || { x: 0, y: 0, scale: 1 }; imgElement1.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
+                    if (imgStr1 && isValidImageSrc(imgStr1)) { imgElement1.src = imgStr1; imgElement1.classList.remove('hidden'); guide1.classList.add('hidden'); const t = state.floorplanTransform['both1'] || { x: 0, y: 0, scale: 1 }; imgElement1.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
                     else { imgElement1.src = ''; imgElement1.classList.add('hidden'); guide1.classList.remove('hidden'); imgElement1.style.transform = 'none'; }
 
                     const imgStr2 = project['floorplanboth2'];
                     const imgElement2 = document.getElementById('floorplan-img-both2');
                     const guide2 = document.querySelector('.guide-text-both2');
-                    if (imgStr2 && imgStr2.startsWith('data:image')) { imgElement2.src = imgStr2; imgElement2.classList.remove('hidden'); guide2.classList.add('hidden'); const t = state.floorplanTransform['both2'] || { x: 0, y: 0, scale: 1 }; imgElement2.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
+                    if (imgStr2 && isValidImageSrc(imgStr2)) { imgElement2.src = imgStr2; imgElement2.classList.remove('hidden'); guide2.classList.add('hidden'); const t = state.floorplanTransform['both2'] || { x: 0, y: 0, scale: 1 }; imgElement2.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
                     else { imgElement2.src = ''; imgElement2.classList.add('hidden'); guide2.classList.remove('hidden'); imgElement2.style.transform = 'none'; }
                 } else {
                     const imgStr = project[`floorplan${suffix}`]; const imgElement = document.getElementById(`floorplan-img-${suffix}`);
                     const workspace = document.getElementById(`workspace-${suffix}`);
                     let guide = workspace.querySelector('.guide-text');
-                    if (imgStr && imgStr.startsWith('data:image')) { imgElement.src = imgStr; imgElement.classList.remove('hidden'); if(guide) guide.classList.add('hidden'); const t = state.floorplanTransform[suffix] || { x: 0, y: 0, scale: 1 }; imgElement.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
+                    if (imgStr && isValidImageSrc(imgStr)) { imgElement.src = imgStr; imgElement.classList.remove('hidden'); if(guide) guide.classList.add('hidden'); const t = state.floorplanTransform[suffix] || { x: 0, y: 0, scale: 1 }; imgElement.style.transform = `translate(${t.x}px, ${t.y}px) scale(${t.scale})`; }
                     else { imgElement.src = ''; imgElement.classList.add('hidden'); if(guide) guide.classList.remove('hidden'); imgElement.style.transform = 'none'; }
                 }
-                (project[`frames${suffix}`] || []).forEach(fData => { 
-                    if (fData.type === 'photo') restorePhotoFrame(suffix, fData); 
-                    if (fData.type === 'text') restoreTextFrame(suffix, fData); 
-                    if (fData.type === 'textbox') restoreTextBoxFrame(suffix, fData); 
-                    if (fData.type === 'stamp') restoreStampFrame(suffix, fData); 
-                    if (fData.type === 'leader') restoreLeaderFrame(suffix, fData); 
-                    if (fData.type === 'freehand') restoreFreehandFrame(suffix, fData); 
-                    if (fData.type === 'floorplan-cutout') restoreFloorplanCutoutFrame(suffix, fData);
-                });
-                renumberMarkers(suffix.toUpperCase());
+                if (!skipFrames) {
+                    (project[`frames${suffix}`] || []).forEach(fData => { 
+                        if (fData.type === 'photo') restorePhotoFrame(suffix, fData); 
+                        if (fData.type === 'text') restoreTextFrame(suffix, fData); 
+                        if (fData.type === 'textbox') restoreTextBoxFrame(suffix, fData); 
+                        if (fData.type === 'stamp') restoreStampFrame(suffix, fData); 
+                        if (fData.type === 'leader') restoreLeaderFrame(suffix, fData); 
+                        if (fData.type === 'freehand') restoreFreehandFrame(suffix, fData); 
+                        if (fData.type === 'floorplan-cutout') restoreFloorplanCutoutFrame(suffix, fData);
+                    });
+                    renumberMarkers(suffix.toUpperCase());
+                }
             });
             syncText();
 
-            undoStack = []; redoStack = []; updateUndoRedoUI();
+            if (!skipFrames) { undoStack = []; redoStack = []; updateUndoRedoUI(); }
             isApplyingHistory = false;
             isModified = false;
         }
+
 
         // 1つのフレーム要素からデータを抽出する（プロジェクト保存・アンドゥ履歴・複製機能で共用）
         function serializeFrameElement(f, suffix) {
@@ -4998,6 +5162,7 @@
                 const activeTag = document.activeElement ? document.activeElement.tagName : '';
                 if (isUserTextEditing && activeTag !== 'TEXTAREA' && activeTag !== 'INPUT') {
                     isUserTextEditing = false;
+                    activeInteractingElementId = null;
                 }
                 if (COLLAB_CURSOR_ENABLED && (!collabCursorChannel || collabCursorChannel.state !== 'joined')) {
                     joinCollabCursorChannel(collabProjectId);
@@ -5008,6 +5173,8 @@
                     if (collabPollTimer) clearInterval(collabPollTimer);
                     collabPollTimer = setInterval(pollCloudForUpdates, COLLAB_POLL_INTERVAL_MS);
                     pollCloudForUpdates(); // すぐに1回試す
+                    if (collabElementSyncTimer) clearInterval(collabElementSyncTimer);
+                    collabElementSyncTimer = setInterval(() => { pushElementChanges(); pollElementChanges(); }, COLLAB_POLL_INTERVAL_MS);
                 }
             }, 30 * 1000);
         });
