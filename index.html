@@ -4175,6 +4175,28 @@
             }
         }
 
+        // 共有リンクを、できるだけ楽に相手へ渡すための共通処理。
+        // スマホ等でOS標準の共有機能（LINE・メール・SMSなどに直接渡せる）が使える場合はそれを使い、
+        // 使えない環境（主にPCのブラウザ）ではクリップボードに自動コピーして貼り付けるだけで済むようにする。
+        async function shareCollabLink(shareUrl) {
+            const shareText = 'このリンクを開くだけで、間取り図の共同編集に参加できます。';
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title: 'HUGme 共同編集リンク', text: shareText, url: shareUrl });
+                    return; // 共有シートで送信 or キャンセル、どちらにせよここで完了
+                } catch (e) {
+                    // ユーザーがキャンセルした場合など。ここでエラーにはせず、コピーにフォールバックする。
+                }
+            }
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                showAutosaveStatus('共有リンクをコピーしました。LINEやメールに貼り付けて送ってください');
+            } catch (e) {
+                // クリップボードも使えない環境向けの最終手段
+                prompt('共有リンクが発行されました。このリンクを一緒に編集する人に送ってください（コピーしてお使いください）:', shareUrl);
+            }
+        }
+
         async function toggleCollabMode() {
             if (!supabaseClient) {
                 alert('共同編集機能の初期化に失敗しました。通信環境をご確認のうえ、ページを再読み込みしてください。');
@@ -4182,7 +4204,12 @@
             }
             if (collabProjectId) {
                 const shareUrl = `${location.origin}${location.pathname}?collab=${encodeURIComponent(collabProjectId)}`;
-                const choice = confirm(`現在の共有リンク:\n${shareUrl}\n\nこのリンクを他の人に送れば、開くだけで同じプロジェクトに参加できます。\n\n「OK」で共同編集を終了して自分だけの下書きに戻ります。\n「キャンセル」でこのまま共同編集を続けます。`);
+                const wantsToShare = confirm('共有リンクをもう一度送りますか？\n\n「OK」→ リンクを送る\n「キャンセル」→ 送らない（次に終了するかどうかを選べます）');
+                if (wantsToShare) {
+                    shareCollabLink(shareUrl);
+                    return;
+                }
+                const choice = confirm('共同編集を終了しますか？\n\n「OK」で共同編集を終了して自分だけの下書きに戻ります。\n「キャンセル」でこのまま共同編集を続けます。');
                 if (choice) stopCollabSync();
                 return;
             }
@@ -4209,7 +4236,7 @@
                     collabProjectId = projectId;
                     updateCollabStatusUI();
                     const shareUrl = `${location.origin}${location.pathname}?collab=${encodeURIComponent(projectId)}`;
-                    prompt('共有リンクが発行されました。このリンクを一緒に編集する人に送ってください。\n相手はこのリンクを開くだけで、自動的に共同編集に参加できます（コピーしてお使いください）:', shareUrl);
+                    shareCollabLink(shareUrl);
                 } else {
                     const { data: row, error } = await supabaseClient.from('projects').select('*').eq('id', projectId).single();
                     if (error || !row) {
