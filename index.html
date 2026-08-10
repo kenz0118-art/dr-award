@@ -4229,10 +4229,14 @@
 
         // 共有リンクを、できるだけ楽に相手へ渡すための共通処理。
         // スマホ等でOS標準の共有機能（LINE・メール・SMSなどに直接渡せる）が使える場合はそれを使い、
-        // 使えない環境（主にPCのブラウザ）ではクリップボードに自動コピーして貼り付けるだけで済むようにする。
+        // それ以外（PCのブラウザなど）ではクリップボードに自動コピーして貼り付けるだけで済むようにする。
+        // ※PCのブラウザでもnavigator.shareにAPI自体は存在することがあるが、共有相手のアプリが
+        //   無く画面が固まって見えることがあったため、タッチ操作可能な端末（主にスマホ・タブレット）
+        //   に限定して使う。
         async function shareCollabLink(shareUrl) {
             const shareText = 'このリンクを開くだけで、間取り図の共同編集に参加できます。';
-            if (navigator.share) {
+            const isTouchDevice = navigator.maxTouchPoints > 0;
+            if (isTouchDevice && navigator.share) {
                 try {
                     await navigator.share({ title: 'HUGme 共同編集リンク', text: shareText, url: shareUrl });
                     return; // 共有シートで送信 or キャンセル、どちらにせよここで完了
