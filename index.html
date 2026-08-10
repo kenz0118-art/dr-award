@@ -848,6 +848,16 @@
                     <button onclick="addCustomStamp()" class="bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-300 text-[10px] font-bold py-1.5 px-2 rounded-lg transition flex items-center justify-center gap-1 shadow-sm w-full mt-0.5"><i class="fa-solid fa-pen text-amber-500 text-[9px]"></i>自由入力</button>
                     
                     <div class="border-b border-neutral-100 my-0.5"></div>
+                    <div class="text-[9px] text-amber-600 font-bold tracking-widest uppercase mb-0 border-b border-neutral-100 pb-1 flex items-center gap-1"><i class="fa-solid fa-shapes"></i> Parts</div>
+                    <button onclick="addStampFrame('N', '#27272a', null)" title="方位マーク" class="bg-neutral-50 hover:bg-neutral-100 text-neutral-700 border border-neutral-300 text-[10px] font-bold py-1.5 px-2 rounded-lg transition shadow-sm w-full text-center">方位(N)</button>
+                    <div class="grid grid-cols-2 gap-1">
+                        <button onclick="addStampFrame('', '#0891b2', 'fa-kitchen-set')" title="キッチン" class="bg-cyan-50 hover:bg-cyan-100 text-cyan-600 border border-cyan-200 py-1.5 rounded-lg transition shadow-sm flex items-center justify-center"><i class="fa-solid fa-kitchen-set text-xs"></i></button>
+                        <button onclick="addStampFrame('', '#65a30d', 'fa-box-archive')" title="収納" class="bg-lime-50 hover:bg-lime-100 text-lime-600 border border-lime-200 py-1.5 rounded-lg transition shadow-sm flex items-center justify-center"><i class="fa-solid fa-box-archive text-xs"></i></button>
+                        <button onclick="addStampFrame('', '#0369a1', 'fa-car')" title="駐車場" class="bg-sky-50 hover:bg-sky-100 text-sky-600 border border-sky-200 py-1.5 rounded-lg transition shadow-sm flex items-center justify-center"><i class="fa-solid fa-car text-xs"></i></button>
+                        <button onclick="addStampFrame('', '#0d9488', 'fa-bath')" title="浴室" class="bg-teal-50 hover:bg-teal-100 text-teal-600 border border-teal-200 py-1.5 rounded-lg transition shadow-sm flex items-center justify-center"><i class="fa-solid fa-bath text-xs"></i></button>
+                    </div>
+                    
+                    <div class="border-b border-neutral-100 my-0.5"></div>
                     <div class="text-[9px] text-amber-600 font-bold tracking-widest uppercase mb-0 border-b border-neutral-100 pb-1 flex items-center gap-1"><i class="fa-solid fa-sliders"></i> Options</div>
                     
                     <button onclick="toggleFooterLogo()" class="bg-white hover:bg-neutral-50 text-neutral-600 border border-neutral-300 text-[10px] font-bold py-1.5 px-2 rounded-lg transition flex items-center justify-center gap-1 shadow-sm w-full" title="左下のロゴ画像を表示・非表示にします">
@@ -2693,7 +2703,7 @@
                 if (!resizing) return; let scale = getCurrentScale();
                 let targetW = startW + (e.clientX - startX) / scale; targetW = Math.round(targetW / 10) * 10; targetW = Math.min(Math.max(targetW, 120), 600); element.style.width = `${targetW}px`; const type = element.getAttribute('data-type');
                 if (type === 'photo') { const shape = element.getAttribute('data-frame-shape') || 'rect'; if (shape === 'circle') { element.style.height = `${targetW}px`; } else { const aspect = element.getAttribute('data-aspect') || 'square'; let targetH = targetW; if (aspect === 'landscape') targetH = Math.round(targetW * 0.75); if (aspect === 'portrait') targetH = Math.round(targetW * 1.33); targetH = Math.round(targetH / 10) * 10; element.style.height = `${targetH}px`; } }
-                else if (type === 'stamp') { element.style.height = `${Math.round(targetW * 0.35)}px`; }
+                else if (type === 'stamp') { const isIconStamp = !!element.querySelector('.stamp-icon'); element.style.height = isIconStamp ? `${targetW}px` : `${Math.round(targetW * 0.35)}px`; }
             });
             handle.addEventListener('pointerup', (e) => { resizing = false; handle.releasePointerCapture(e.pointerId); });
         }
@@ -3562,19 +3572,34 @@
             return frame;
         }
 
-        function addStampFrame(text, color) {
+        // スタンプの中身を作る共通処理。テキストスタンプ（採用決定、等）と、
+        // アイコンスタンプ（キッチン、収納、等の部品）の両方をここで作る。
+        function createStampContentElement(text, color, iconClass) {
+            if (iconClass) {
+                const icon = document.createElement('i');
+                icon.className = `fa-solid ${iconClass} stamp-icon`;
+                icon.setAttribute('data-icon-class', iconClass);
+                icon.style.cssText = `width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:${color}; font-size:22px; pointer-events:none;`;
+                return icon;
+            }
+            const input = document.createElement('input'); input.type = 'text'; input.value = text; input.className = 'w-full h-full bg-transparent text-center font-bold text-sm outline-none tracking-wider font-handJa'; input.style.color = color; input.onclick = (e) => e.stopPropagation();
+            input.addEventListener('focus', () => saveHistoryState());
+            return input;
+        }
+
+        function addStampFrame(text, color, iconClass = null) {
             saveHistoryState();
             const frameId = 'frame_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
             const frame = document.createElement('div'); frame.className = 'photo-frame active select-none'; frame.setAttribute('data-id', frameId); frame.setAttribute('data-type', 'stamp'); 
             const spawn = getCascadePosition(state.currentFloor.toLowerCase(), 'stamp', 40, 420);
-            frame.style.width = '130px'; frame.style.height = '46px'; frame.style.left = `${spawn.left}px`; frame.style.top = `${spawn.top}px`; frame.style.zIndex = '35'; frame.style.padding = '6px'; frame.style.backgroundColor = `${color}10`; frame.style.borderColor = color; frame.style.borderWidth = '2px'; frame.style.borderRadius = '8px';
+            const isIcon = !!iconClass;
+            frame.style.width = isIcon ? '52px' : '130px'; frame.style.height = isIcon ? '52px' : '46px'; frame.style.left = `${spawn.left}px`; frame.style.top = `${spawn.top}px`; frame.style.zIndex = '35'; frame.style.padding = '6px'; frame.style.backgroundColor = `${color}10`; frame.style.borderColor = color; frame.style.borderWidth = '2px'; frame.style.borderRadius = isIcon ? '50%' : '8px';
             const controls = document.createElement('div'); controls.className = 'photo-controls no-print';
             const btnDelete = document.createElement('button'); btnDelete.innerHTML = '<i class="fa-solid fa-trash text-red-500"></i> 削除'; btnDelete.className = 'text-red-500 hover:bg-red-50 transition rounded px-2 py-1'; btnDelete.onclick = (e) => { e.stopPropagation(); saveHistoryState(); frame.remove(); }; controls.appendChild(btnDelete);
             controls.appendChild(makeDuplicateButton(frame)); controls.appendChild(makeLockButton(frame));
-            const input = document.createElement('input'); input.type = 'text'; input.value = text; input.className = 'w-full h-full bg-transparent text-center font-bold text-sm outline-none tracking-wider font-handJa'; input.style.color = color; input.onclick = (e) => e.stopPropagation();
-            input.addEventListener('focus', () => saveHistoryState());
+            const content = createStampContentElement(text, color, iconClass);
             const resizeHandle = document.createElement('div'); resizeHandle.className = 'absolute right-0 bottom-0 w-4 h-4 cursor-se-resize no-print z-40'; resizeHandle.onclick = (e) => { e.stopPropagation(); };
-            bindOriginalResizeEvents(resizeHandle, frame); frame.appendChild(controls); frame.appendChild(input); frame.appendChild(resizeHandle); bindDragEvents(frame);
+            bindOriginalResizeEvents(resizeHandle, frame); frame.appendChild(controls); frame.appendChild(content); frame.appendChild(resizeHandle); bindDragEvents(frame);
             const suffix = state.currentFloor.toLowerCase(); document.getElementById(`frames-${suffix}`).appendChild(frame); focusFrame(frame); checkMenuPlacement(frame);
         }
 
@@ -4033,8 +4058,9 @@
 
         // 相手のカーソルをDOM上に表示・更新する（ページ内の座標系は他のフレームと同じ「デザイン上のpx」を使う）
         function renderRemoteCursor(payload) {
-            const { clientId, name, color, floor, x, y } = payload;
+            const { clientId, name, color, floor, x, y, activeElementId } = payload;
             if (clientId === myCollabClientId) return; // 自分自身のカーソルは表示しない
+            renderRemoteSelectionOutline(clientId, color, floor, activeElementId);
             // 自分が今見ている階と違う階を相手が触っている場合は、表示のしようがないので消しておく
             if (floor !== state.currentFloor.toLowerCase()) {
                 removeRemoteCursor(clientId);
@@ -4063,13 +4089,39 @@
             entry.el.style.top = `${y}px`;
         }
 
+        // 「相手が今どの要素を触っているか」を、色付きの枠で示す仕組み。
+        // clientIdごとに「今どの要素に枠を付けているか」を覚えておき、変わったら付け替える。
+        let remoteSelectionOutlines = {}; // clientId -> { el, color }
+        function renderRemoteSelectionOutline(clientId, color, floor, activeElementId) {
+            const prev = remoteSelectionOutlines[clientId];
+            // 相手が何も触っていない、または表示している階が違う場合は枠を消すだけ
+            if (!activeElementId || floor !== state.currentFloor.toLowerCase()) {
+                if (prev) { prev.el.style.outline = ''; prev.el.style.outlineOffset = ''; delete remoteSelectionOutlines[clientId]; }
+                return;
+            }
+            if (prev && prev.el.getAttribute('data-id') === activeElementId && document.body.contains(prev.el)) return; // 変化なし
+            if (prev) { prev.el.style.outline = ''; prev.el.style.outlineOffset = ''; }
+            const target = document.querySelector(`#frames-${floor} .photo-frame[data-id="${activeElementId}"]`);
+            if (!target) { delete remoteSelectionOutlines[clientId]; return; }
+            target.style.outline = `3px solid ${color}`;
+            target.style.outlineOffset = '2px';
+            remoteSelectionOutlines[clientId] = { el: target, color };
+        }
+
+        function removeRemoteSelectionOutline(clientId) {
+            const entry = remoteSelectionOutlines[clientId];
+            if (entry) { entry.el.style.outline = ''; entry.el.style.outlineOffset = ''; delete remoteSelectionOutlines[clientId]; }
+        }
+
         function removeRemoteCursor(clientId) {
             const entry = remoteCursors[clientId];
             if (entry) { entry.el.remove(); delete remoteCursors[clientId]; }
+            removeRemoteSelectionOutline(clientId);
         }
 
         function clearAllRemoteCursors() {
             Object.keys(remoteCursors).forEach(removeRemoteCursor);
+            Object.keys(remoteSelectionOutlines).forEach(removeRemoteSelectionOutline);
         }
 
         // 自分のマウス位置を、現在の階の「デザイン上のpx座標（ズーム倍率に関係ない共通の座標）」に変換して配信する
@@ -4092,7 +4144,7 @@
             collabCursorChannel.send({
                 type: 'broadcast',
                 event: 'cursor',
-                payload: { clientId: myCollabClientId, name: myCollabName, color: myCollabColor, floor: suffix, x, y }
+                payload: { clientId: myCollabClientId, name: myCollabName, color: myCollabColor, floor: suffix, x, y, activeElementId: activeInteractingElementId }
             });
         }
 
@@ -4637,7 +4689,11 @@
             }
             else if (type === 'text') { baseData.text = f.querySelector('textarea').value; baseData.bg = f.getAttribute('data-bg') || 'transparent'; baseData.fg = f.getAttribute('data-fg') || '#1a1a1a'; baseData.border = f.getAttribute('data-border') || 'sketch'; baseData.fontSize = f.querySelector('textarea').style.fontSize || '14px'; baseData.textAlign = f.querySelector('textarea').style.textAlign || 'center'; }
             else if (type === 'textbox') { baseData.text = f.querySelector('textarea').value; baseData.fg = f.getAttribute('data-fg') || '#1a1a1a'; baseData.fontSize = f.querySelector('textarea').style.fontSize || '16px'; baseData.textAlign = f.querySelector('textarea').style.textAlign || 'center'; }
-            else if (type === 'stamp') { baseData.text = f.querySelector('input').value; baseData.color = f.querySelector('input').style.color; }
+            else if (type === 'stamp') {
+                const iconEl = f.querySelector('.stamp-icon');
+                if (iconEl) { baseData.iconClass = iconEl.getAttribute('data-icon-class'); baseData.color = iconEl.style.color; }
+                else { baseData.text = f.querySelector('input').value; baseData.color = f.querySelector('input').style.color; }
+            }
             else if (type === 'leader') { const dot = f.querySelector('.arrow-dot'); baseData.dotLeft = dot.style.left; baseData.dotTop = dot.style.top; baseData.shape = f.getAttribute('data-shape') || 'line'; baseData.color = f.getAttribute('data-color'); baseData.marker = f.getAttribute('data-marker'); }
             else if (type === 'freehand') { 
                 baseData.color = f.getAttribute('data-color'); 
@@ -4901,14 +4957,14 @@
         }
 
         function restoreStampFrame(suffix, data) {
-            const frame = document.createElement('div'); frame.className = 'photo-frame font-sans select-none'; frame.setAttribute('data-id', data.id); if (data.locked) frame.setAttribute('data-locked', 'true'); frame.setAttribute('data-type', 'stamp'); frame.style.width = data.width; frame.style.height = data.height; frame.style.left = data.left; frame.style.top = data.top; frame.style.zIndex = data.zIndex; frame.style.padding = '6px'; frame.style.backgroundColor = `${data.color}10`; frame.style.borderColor = data.color; frame.style.borderWidth = '2px'; frame.style.borderRadius = '8px';
+            const isIcon = !!data.iconClass;
+            const frame = document.createElement('div'); frame.className = 'photo-frame font-sans select-none'; frame.setAttribute('data-id', data.id); if (data.locked) frame.setAttribute('data-locked', 'true'); frame.setAttribute('data-type', 'stamp'); frame.style.width = data.width; frame.style.height = data.height; frame.style.left = data.left; frame.style.top = data.top; frame.style.zIndex = data.zIndex; frame.style.padding = '6px'; frame.style.backgroundColor = `${data.color}10`; frame.style.borderColor = data.color; frame.style.borderWidth = '2px'; frame.style.borderRadius = isIcon ? '50%' : '8px';
             const controls = document.createElement('div'); controls.className = 'photo-controls no-print';
             const btnDelete = document.createElement('button'); btnDelete.innerHTML = '<i class="fa-solid fa-trash text-red-500"></i> 削除'; btnDelete.onclick = (e) => { e.stopPropagation(); saveHistoryState(); frame.remove(); }; controls.appendChild(btnDelete);
             controls.appendChild(makeDuplicateButton(frame)); controls.appendChild(makeLockButton(frame));
-            const input = document.createElement('input'); input.type = 'text'; input.value = data.text; input.className = 'w-full h-full bg-transparent text-center font-bold text-sm outline-none tracking-wider font-handJa'; input.style.color = data.color; input.onclick = (e) => e.stopPropagation();
-            input.addEventListener('focus', () => saveHistoryState());
+            const content = createStampContentElement(data.text, data.color, data.iconClass);
             const resizeHandle = document.createElement('div'); resizeHandle.className = 'absolute right-0 bottom-0 w-4 h-4 cursor-se-resize no-print z-40';
-            bindOriginalResizeEvents(resizeHandle, frame); frame.appendChild(controls); frame.appendChild(input); frame.appendChild(resizeHandle); bindDragEvents(frame); document.getElementById(`frames-${suffix}`).appendChild(frame); checkMenuPlacement(frame);
+            bindOriginalResizeEvents(resizeHandle, frame); frame.appendChild(controls); frame.appendChild(content); frame.appendChild(resizeHandle); bindDragEvents(frame); document.getElementById(`frames-${suffix}`).appendChild(frame); checkMenuPlacement(frame);
         }
 
         function restoreLeaderFrame(suffix, data) {
