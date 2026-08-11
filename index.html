@@ -511,6 +511,10 @@
                 <button onclick="window.print()" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold py-2 px-6 rounded-xl shadow-md flex items-center gap-1.5 transition transform active:scale-95">
                     <i class="fa-solid fa-file-pdf text-sm"></i> 印刷 / PDF
                 </button>
+
+                <button onclick="exportProject()" class="bg-white hover:bg-neutral-50 font-bold text-neutral-600 py-2 px-4 rounded-xl flex items-center gap-1.5 border border-neutral-200 transition shadow-sm" title="このプロジェクトを、相手が「ファイルから取込」で開けるファイル(.json)として書き出します">
+                    <i class="fa-solid fa-file-export text-sky-500"></i> ファイル書き出し
+                </button>
                 
                 <div class="w-[1px] h-5 bg-neutral-200 mx-1"></div>
                 
@@ -4959,14 +4963,16 @@
 
         function loadProject(input, fromTitle = false) {
             const file = input.files[0]; if (!file) return; const reader = new FileReader();
-            reader.onload = (e) => {
+            reader.onload = async (e) => {
                 try {
                     const project = JSON.parse(e.target.result); 
                     state.currentProjectId = project.id || null; 
                     applyProjectData(project);
+                    isModified = true; // 取込んだ直後は「保存すべき内容がある」扱いにする
+                    await saveDraft(true); // すぐにトップ画面の一覧へ出るよう、取込と同時に一度下書き保存しておく
                     
                     if(fromTitle) startApp();
-                    alert("プロジェクトファイルを読み込みました。");
+                    alert("プロジェクトファイルを読み込みました。トップ画面の下書き一覧にも保存しました。");
                 } catch (err) { alert('ファイルの読み込みに失敗しました。'); }
             };
             reader.readAsText(file); input.value = '';
