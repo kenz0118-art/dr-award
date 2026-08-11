@@ -4850,7 +4850,7 @@
             });
             syncText();
 
-            if (!skipFrames) { undoStack = []; redoStack = []; updateUndoRedoUI(); }
+            if (!skipFrames) { undoStack = []; redoStack = []; updateUndoRedoUI(); deselectAll(); }
             isApplyingHistory = false;
             isModified = false;
         }
