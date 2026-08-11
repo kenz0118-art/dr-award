@@ -4965,6 +4965,7 @@
             const file = input.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
+                    if (collabProjectId) stopCollabSync(); // 共同編集中の裏同期が、取り込んだプロジェクトを上書きしないようにする
                     const project = JSON.parse(e.target.result); 
                     state.currentProjectId = project.id || null; 
                     applyProjectData(project);
@@ -4984,6 +4985,7 @@
 
         function loadDraft(project) {
             try {
+                if (collabProjectId) stopCollabSync(); // 共同編集中の裏同期が、これから開く別プロジェクトを上書きしないようにする
                 state.currentProjectId = project.id; 
                 applyProjectData(project);
                 startApp();
@@ -5417,6 +5419,7 @@
         }
 
         function startNewApp() {
+            if (collabProjectId) stopCollabSync(); // 共同編集中の裏同期が、新規プロジェクトを上書きしないようにする
             state.currentProjectId = null;
             clearAllData(); 
             startApp();
