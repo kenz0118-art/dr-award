@@ -1082,6 +1082,34 @@
             }
         }, true);
         let dragFloorplanTarget = null;
+        const FLOORPLAN_SNAP_PX = 6; // この範囲内まで来たら中央にピタッと揃える
+
+        // 図面切り取り背景を動かしている時に出す、中央揃えのガイド線（縦・横）を用意する。
+        // 各ワークスペース（1F/2F/外観/両面表示の左右）ごとに1組だけ作り、使い回す。
+        function getFloorplanDragContainer(suffix) {
+            return document.getElementById((suffix === 'both1' || suffix === 'both2') ? `sub-workspace-${suffix}` : `workspace-${suffix}`);
+        }
+        function ensureFloorplanGuides(suffix) {
+            const container = getFloorplanDragContainer(suffix);
+            if (!container) return null;
+            let v = container.querySelector(':scope > .floorplan-guide-v');
+            let h = container.querySelector(':scope > .floorplan-guide-h');
+            if (!v) {
+                v = document.createElement('div'); v.className = 'floorplan-guide-v no-print';
+                v.style.cssText = 'position:absolute; left:50%; top:0; bottom:0; width:0; border-left:2px dashed #ec4899; pointer-events:none; z-index:30; display:none;';
+                container.appendChild(v);
+            }
+            if (!h) {
+                h = document.createElement('div'); h.className = 'floorplan-guide-h no-print';
+                h.style.cssText = 'position:absolute; top:50%; left:0; right:0; height:0; border-top:2px dashed #ec4899; pointer-events:none; z-index:30; display:none;';
+                container.appendChild(h);
+            }
+            return { v, h };
+        }
+        function hideFloorplanGuides(suffix) {
+            const guides = ensureFloorplanGuides(suffix);
+            if (guides) { guides.v.style.display = 'none'; guides.h.style.display = 'none'; }
+        }
         let floorplanStartX = 0, floorplanStartY = 0;
         let floorplanOrigX = 0, floorplanOrigY = 0;
         let floorplanWheelHighlightTimeout = null;
@@ -3874,6 +3902,17 @@
                     const transform = state.floorplanTransform[dragFloorplanTarget];
                     transform.x = floorplanOrigX + dx;
                     transform.y = floorplanOrigY + dy;
+
+                    // 中央付近まで来たらピタッとスナップさせ、ガイド線を出す
+                    // （x=0, y=0がちょうどワークスペース中央に相当する。左右反転を防ぐため
+                    //   Shiftキーを押している間はスナップを無効にできるようにしておく）
+                    const guides = ensureFloorplanGuides(dragFloorplanTarget);
+                    if (guides && !e.shiftKey) {
+                        if (Math.abs(transform.x) <= FLOORPLAN_SNAP_PX) { transform.x = 0; guides.v.style.display = 'block'; } else { guides.v.style.display = 'none'; }
+                        if (Math.abs(transform.y) <= FLOORPLAN_SNAP_PX) { transform.y = 0; guides.h.style.display = 'block'; } else { guides.h.style.display = 'none'; }
+                    } else if (guides) {
+                        guides.v.style.display = 'none'; guides.h.style.display = 'none';
+                    }
                     
                     const imgElement = document.getElementById(`floorplan-img-${dragFloorplanTarget}`);
                     if (imgElement) {
@@ -3911,6 +3950,7 @@
                 // --- 図面のドラッグ移動処理 ---
                 if (isDraggingFloorplan) {
                     hideFloorplanEditingHighlight(dragFloorplanTarget); // 「編集中」の枠を消す
+                    hideFloorplanGuides(dragFloorplanTarget); // 中央揃えのガイド線を消す
                     isDraggingFloorplan = false;
                     dragFloorplanTarget = null;
                     ws.releasePointerCapture(e.pointerId);
